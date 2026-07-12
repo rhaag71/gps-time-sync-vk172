@@ -4,7 +4,7 @@ This repository contains a Python 3 project managed via `pyproject.toml` and [Ha
 
 ## Features
 - Modern `pyproject.toml` configuration.
-- Source code under `src/` using the `gps_time_syc_vk172` package name, including a GPS time sync CLI.
+- Source code under `src/` using the `gps_time_sync_vk172` package name, including a GPS time sync CLI.
 - Pytest-based test structure under `tests/`.
 
 ## Getting Started
@@ -20,7 +20,7 @@ pip install -e .[test]
 Run the sample package entry point:
 
 ```bash
-python -m gps_time_syc_vk172
+python -m gps_time_sync_vk172
 ```
 
 Run tests:

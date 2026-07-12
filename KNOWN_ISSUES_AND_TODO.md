@@ -4,13 +4,17 @@
 
 This project is functional and has been tested with a VK172 USB GPS receiver, but the repository is still undergoing cleanup and public-release preparation. The items below describe known defects, incomplete changes, reliability concerns, documentation gaps, and optional improvements. Prospective users should review the critical items before installing or deploying the project.
 
-This review reflects commit `4076c48` and the working tree inspected on 2026-07-12. “Confirmed” means the behavior is directly visible in the repository or was reproduced during this review. “Probable—validate” identifies a risk that needs a focused test. “Optional” identifies an improvement rather than a defect. No existing virtual environment was used as evidence.
+This review began at commit `4076c48`; the P0 packaging repairs were validated in the working tree on 2026-07-12. “Confirmed” means the behavior is directly visible in the repository or was reproduced during review. “Probable—validate” identifies a risk that needs a focused test. “Optional” identifies an improvement rather than a defect. No existing project virtual environment was used as evidence.
+
+TLDR summary;
+The P0 package rename and packaging-metadata blockers are resolved in the current working tree. Clean editable installation, tests, wheel and source-distribution builds, and wheel-only installation now succeed. The remaining P1, P2, and P3 items below still need review before a public release.
+
 
 ## Executive summary
 
-The core implementation is substantial: it validates NMEA checksums, parses RMC/GGA/GSA/GSV messages, reports GPS status, avoids setting the clock in `--status` and `--no-set` modes, and has been used with VK172 hardware. The repository is not yet cleanly installable, however. The source directory and tests retain `gps_time_syc_vk172`, while packaging and the console script expect `gps_time_sync_vk172`. In addition, current Hatchling rejects the spelling of the GPLv3 classifier before it reaches package selection. A clean editable install therefore failed, leaving no installed module, test runner, or `gps-time-sync` command.
+The core implementation is substantial: it validates NMEA checksums, parses RMC/GGA/GSA/GSV messages, reports GPS status, avoids setting the clock in `--status` and `--no-set` modes, and has been used with VK172 hardware. The corrected `gps_time_sync_vk172` package now installs and builds cleanly, and the `gps-time-sync` entry point targets it. The canonical GPLv3 and Linux classifiers are accepted by current Hatchling.
 
-The first release task must restore a clean install and build. After that, the highest-value work is to define status-collection and timeout semantics, harden clock-setting and serial-error behavior, expand deterministic tests, reorganize the user documentation, and provide a safer unattended deployment path.
+The highest-value remaining work is to define status-collection and timeout semantics, harden clock-setting and serial-error behavior, expand deterministic tests, reorganize the user documentation, and provide a safer unattended deployment path.
 
 ## Confirmed strengths
 
@@ -19,47 +23,47 @@ The first release task must restore a clean install and build. After that, the h
 - **Confirmed:** The CLI distinguishes status display, display-only operation, serial errors, acquisition timeout, permission errors, and other clock-setting errors with separate paths.
 - **Confirmed:** Parsing accepts alternate talker prefixes structurally by checking sentence types with `endswith()` or the final three characters, although representative `GN` streams are not tested.
 - **Confirmed:** The Bash wrapper uses strict shell mode, derives the repository path from its own location, quotes current expansions, and gives distinct errors for a missing virtual environment and executable.
-- **Confirmed:** Existing unit tests cover basic valid/invalid RMC parsing, one GGA/GSA/GSV example, a status summary, three clock-setting paths, basic acquisition, and one CLI status path. They are useful foundations, but could not be run from the failed clean installation in this review.
+- **Confirmed:** Existing unit tests cover basic valid/invalid RMC parsing, one GGA/GSA/GSV example, a status summary, three clock-setting paths, basic acquisition, and one CLI status path. All 14 tests passed from the clean editable installation during P0 validation.
 
 ## Known critical issues
 
-### P0 — incomplete package rename (confirmed)
+### P0 — incomplete package rename (resolved 2026-07-12)
 
-**Current behavior:** Git tracks `src/gps_time_syc_vk172/`, and `__init__.py`, `__main__.py`, both test modules, README commands, `README_CHAT.md`, and `README_VENV.md` still contain the misspelled package or project name. In contrast, the Hatchling wheel selection is `src/gps_time_sync_vk172` and the console entry point is `gps_time_sync_vk172.gps_time_sync:cli`. The `__init__.py` metadata lookup also asks for the old distribution name `gps-time-syc-vk172`, although the declared distribution is `gps-time-sync-vk172`.
+**Current behavior:** Resolved. Git now tracks `src/gps_time_sync_vk172/`; source, tests, configuration, and active README references use the corrected name. The distribution lookup uses `gps-time-sync-vk172`, and the console entry point targets `gps_time_sync_vk172.gps_time_sync:cli`.
 
-**Why it matters:** A clean editable install, wheel build, import, test run, or console-script installation can fail even if an older editable installation or virtual environment still appears to work. The build configuration selects a directory that does not exist; the source and tests import a name that packaging no longer exposes.
+**Why it matters:** The inconsistency previously broke clean packaging workflows even when an older editable installation appeared to work.
 
-**Recommended change:** Perform a real Git-aware rename from `src/gps_time_syc_vk172` to `src/gps_time_sync_vk172`; update every import, docstring, module command, metadata lookup, test, documentation reference, and project-directory example; and remove the old misspelled directory. Then delete and recreate the development virtual environment, reinstall from scratch, run tests in that clean environment, build both artifacts, and install the generated wheel into a second clean environment.
+**Recommended change:** Completed with a Git-aware directory rename and corrected imports, module references, metadata lookup, tests, and active documentation references. Keep the corrected spelling in future changes.
 
-**Files likely affected:** `src/gps_time_syc_vk172/` (renamed), its `__init__.py` and `__main__.py`, `tests/test_main.py`, `tests/test_gps_time_sync.py`, `README.md`, `README_CHAT.md`, `README_VENV.md`, and any future configuration or scripts found by the repository-wide search. `pyproject.toml` already uses the intended package path and entry point and should be verified rather than reverted.
+**Files affected:** The package directory and its `__init__.py`/`__main__.py`, both test modules, `README.md`, `README_CHAT.md`, and `README_VENV.md`. `pyproject.toml` retains the corrected wheel path and entry point.
 
-**How to verify the eventual fix:** The spelling search below must return no old-name occurrences. Run the complete clean-install/build sequence shown under “Release-readiness checklist,” confirm both imports and module execution use `gps_time_sync_vk172`, and verify `gps-time-sync --help` from the wheel-only environment.
+**How it was verified:** A disposable environment installed `.[test]`; all 14 tests passed; corrected import, module execution, and console help succeeded. Both artifacts built, and the wheel installed and passed the same smoke checks in a second clean environment. Archive inspection found only the corrected package path.
 
-### P0 — Hatchling rejects the current GPL classifier spelling (confirmed)
+### P0 — invalid GPL classifier (resolved 2026-07-12)
 
-**Current behavior:** The metadata correctly intends GPLv3, but clean editable installation stops during Hatchling metadata validation with `ValueError: Unknown classifier in field project.classifiers: License :: GNU General Public License v3 (GPLv3)`.
+**Current behavior:** Resolved. Metadata uses the accepted `License :: OSI Approved :: GNU General Public License v3 (GPLv3)` classifier while retaining the GPLv3 license metadata and `LICENSE` file. Validation also revealed and corrected the invalid OS classifier to `Operating System :: POSIX :: Linux`.
 
-**Why it matters:** This is an independent clean-install and build blocker that occurs before Hatchling reports the nonexistent wheel package path. The earlier license-identity correction is valid, but the classifier must also use a classifier string accepted by current packaging tooling.
+**Why it matters:** Invalid Trove classifier strings blocked all clean metadata generation, installation, and builds.
 
-**Recommended change:** Retain GPLv3 licensing and replace only the classifier with the current canonical GPLv3 classifier accepted by Hatchling/PyPI. Revalidate metadata with the supported Hatchling version.
+**Recommended change:** Completed. Keep the canonical GPLv3 and POSIX/Linux classifier strings and preserve the GPLv3 license.
 
 **Files likely affected:** `pyproject.toml` only.
 
-**How to verify the eventual fix:** Repeat `python -m pip install -e '.[test]'` in a new environment and `python -m build`; neither should report an unknown classifier, and built metadata should still identify GPLv3.
+**How it was verified:** Clean editable installation and `python -m build` succeeded with Hatchling 1.31.0. Wheel metadata reports distribution `gps-time-sync-vk172`, license `GNU General Public License v3 (GPLv3)`, the canonical GPLv3 classifier, and `Operating System :: POSIX :: Linux`.
 
 ## Packaging and naming
 
-### P2 — verify all rename surfaces and clean artifacts (confirmed cleanup scope)
+### P2 — verify all rename surfaces and clean artifacts (resolved with P0)
 
-**Current behavior:** Old spellings occur in physical paths, Python imports and messages, README commands, conversation notes, virtual-environment instructions, and author-specific project paths. The repository scan found no additional tracked application/configuration files beyond those named above.
+**Current behavior:** Active physical paths, Python imports/messages, README commands, conversation notes, virtual-environment instructions, and author-specific project paths now use the corrected spelling.
 
 **Why it matters:** A partial textual correction can leave stale entry points, metadata lookups, documentation, cached bytecode, or editable-install links that mask the defect.
 
-**Recommended change:** Make the P0 rename atomically, remove generated caches from validation environments, and do not use the old `.venv` as proof. Preserve the clearly labeled author example if useful, but spell the repository directory correctly and add a generic path beside it.
+**Recommended change:** The rename and clean validation are complete. Continue to exclude disposable/generated artifacts from source-name audits and do not use an old `.venv` as release evidence. Adding a generic path example remains part of the later documentation work.
 
-**Files likely affected:** Same files as the P0 rename plus local, untracked build/test artifacts (which should be regenerated, not committed).
+**Files affected:** Same files as the resolved P0 rename plus regenerated, untracked build artifacts.
 
-**How to verify the eventual fix:** Run:
+**How it was verified:** The search below found no stale active source, test, configuration, script, or README references; occurrences retained in this document are audit/search history rather than active package references.
 
 ```bash
 grep -RIn --exclude-dir=.git --exclude-dir=.venv -e 'gps_time_syc_vk172' -e 'gps-time-syc-vk172' .
@@ -248,7 +252,7 @@ Use captured, sanitized NMEA fixtures so realistic receiver streams can be repla
 
 ## Prioritized implementation plan
 
-1. **P0:** Complete the Git-aware package rename and restore clean editable installation, imports, tests, `python -m gps_time_sync_vk172`, console-script installation, wheel/sdist builds, and wheel-only installation. In the same packaging-validation pass, correct the GPLv3 classifier to an accepted canonical value without changing the GPLv3 license.
+1. **P0 — complete:** The Git-aware package rename, accepted GPLv3/Linux classifiers, clean editable installation, imports, tests, module/console entry points, wheel/sdist builds, and wheel-only installation were restored and validated.
 2. **P1:** Define and test status-collection completeness and timeout/warmup semantics.
 3. **P1:** Correct fix-mode output, choose a consistent serial-decoding policy, and narrowly harden `set_system_time()` fallback behavior.
 4. **P1:** Add realistic deterministic NMEA, serial-failure, timeout, CLI exit-code/call-count, and shell-wrapper tests.
@@ -258,14 +262,14 @@ Use captured, sanitized NMEA fixtures so realistic receiver streams can be repla
 
 ## Release-readiness checklist
 
-- [ ] No old package/project spelling remains outside intentionally quoted historical material.
-- [ ] The license remains GPLv3 and Hatchling accepts all metadata/classifiers.
-- [ ] A new virtual environment can install `.[test]` without using prior artifacts.
-- [ ] All tests pass from the clean editable install.
-- [ ] The corrected module runs and the installed console script exposes help.
-- [ ] `python -m build` produces both a wheel and source distribution using a declared/documented release dependency.
-- [ ] The generated wheel installs and imports in a second clean environment.
-- [ ] Wheel/sdist contents contain the intended package and no misspelled package.
+- [x] No old package/project spelling remains outside intentionally quoted audit/search history.
+- [x] The license remains GPLv3 and Hatchling accepts all metadata/classifiers.
+- [x] A new virtual environment can install `.[test]` without using prior artifacts.
+- [x] All 14 tests pass from the clean editable install.
+- [x] The corrected module runs and the installed console script exposes help.
+- [x] `python -m build` produces both a wheel and source distribution; the disposable installation of `build` is recorded below.
+- [x] The generated wheel installs and imports in a second clean environment.
+- [x] Wheel/sdist contents contain the intended package and no misspelled package path.
 - [ ] Status collection, timeout, malformed input, serial failures, CLI paths, clock setting, and shell-wrapper failures are covered.
 - [ ] README instructions work from a clean clone and distinguish safe display modes from clock-setting mode.
 - [ ] CI checks supported Python versions, Ruff, ShellCheck, artifacts, and installed-package smoke tests.
@@ -309,4 +313,39 @@ Every shell invocation used for this review is recorded below. Several invocatio
 8. `git status --short && git diff -- KNOWN_ISSUES_AND_TODO.md && rg -n '^## (...)$' KNOWN_ISSUES_AND_TODO.md`
    - Result: only the requested new file was untracked; `git diff` had no output because ordinary diff does not display untracked content; all 12 required section headings were present.
 
-The ordered implementation sequence is therefore: fix the rename and accepted GPLv3 metadata first; prove the complete clean packaging path; then address collection/timeout/clock/decoding behavior and tests; then finish documentation, deployment, and CI work.
+The original audit established the P0 baseline above. The P0 repair was completed and validated in a later working-tree pass recorded next.
+
+### P0 repair validation log (2026-07-12)
+
+1. `git mv src/gps_time_syc_vk172 src/gps_time_sync_vk172`
+   - Result: the sandboxed attempt could not write `.git/index.lock`; the approved retry succeeded and Git records the package move as renames.
+2. Active-reference search: `grep -RIn --exclude-dir=.git --exclude-dir=.venv --exclude=KNOWN_ISSUES_AND_TODO.md -e 'gps_time_syc_vk172' -e 'gps-time-syc-vk172' .`
+   - Result: no active source, test, configuration, script, or README matches after the edits.
+3. `rm -rf /tmp/gps-time-sync-audit-venv && python3 -m venv /tmp/gps-time-sync-audit-venv`
+   - Result: a fresh disposable Python 3.13 environment was created outside the repository.
+4. `/tmp/gps-time-sync-audit-venv/bin/python -m pip install --upgrade pip && /tmp/gps-time-sync-audit-venv/bin/python -m pip install -e '.[test]'`
+   - Result: pip upgraded to 26.1.2. The first editable-install attempt showed that `Operating System :: Unix/Linux` was also invalid after the GPL classifier was fixed. It was narrowly corrected to `Operating System :: POSIX :: Linux`; the repeated editable install then succeeded with `gps-time-sync-vk172==0.1.0`, pyserial 3.5, and pytest 9.1.1.
+5. `/tmp/gps-time-sync-audit-venv/bin/pytest`
+   - Result: **14 passed in 0.06s** on Python 3.13.5.
+6. `/tmp/gps-time-sync-audit-venv/bin/python -c 'import gps_time_sync_vk172; print(gps_time_sync_vk172.__version__)'`
+   - Result: import succeeded and printed `0.1.0`.
+7. `/tmp/gps-time-sync-audit-venv/bin/python -m gps_time_sync_vk172`
+   - Result: succeeded and printed the corrected package-loaded message.
+8. `/tmp/gps-time-sync-audit-venv/bin/gps-time-sync --help`
+   - Result: exited successfully and displayed the complete CLI usage/options.
+9. `/tmp/gps-time-sync-audit-venv/bin/python -m pip install build`
+   - Result: explicitly installed build 1.5.1 and pyproject-hooks 1.2.0 in the disposable audit environment; no project dependency was added.
+10. `rm -rf dist build && /tmp/gps-time-sync-audit-venv/bin/python -m build && ls -lh dist`
+    - Result: with Hatchling 1.31.0 in isolated build environments, successfully produced `gps_time_sync_vk172-0.1.0.tar.gz` and `gps_time_sync_vk172-0.1.0-py3-none-any.whl` (approximately 31 KiB and 21 KiB in that build).
+11. `rm -rf /tmp/gps-time-sync-wheel-venv && python3 -m venv /tmp/gps-time-sync-wheel-venv`
+    - Result: a second clean Python 3.13 environment was created outside the repository.
+12. `/tmp/gps-time-sync-wheel-venv/bin/python -m pip install --upgrade pip && /tmp/gps-time-sync-wheel-venv/bin/python -m pip install dist/*.whl`
+    - Result: pip upgraded to 26.1.2; the generated wheel and only its runtime dependency, pyserial 3.5, installed successfully.
+13. Wheel-only smoke commands: corrected-package import/version, `python -m gps_time_sync_vk172`, and `gps-time-sync --help` using `/tmp/gps-time-sync-wheel-venv/bin/`.
+    - Result: all succeeded; version was `0.1.0`, the corrected package-loaded message printed, and CLI help displayed.
+14. `unzip -l` on the wheel, `tar -tzf` on the sdist, `unzip -p` for wheel `entry_points.txt` and `METADATA`, and an installed `importlib.metadata` inspection.
+    - Result: both archives contained `gps_time_sync_vk172` and no misspelled package path. The entry point is `gps-time-sync = gps_time_sync_vk172.gps_time_sync:cli`. Metadata reports `Name: gps-time-sync-vk172`, GPLv3 license text/file and canonical classifier, and `Operating System :: POSIX :: Linux`.
+15. After updating this document, the artifacts were rebuilt with `rm -rf dist build && /tmp/gps-time-sync-audit-venv/bin/python -m build`; the final wheel was reinstalled with `--force-reinstall --no-deps` in the second environment, followed by the version import, module, console-help, `unzip -l`, and `tar -tzf` checks.
+    - Result: both final artifacts rebuilt successfully; the final wheel reinstalled as version `0.1.0`; corrected import/module/console smoke checks succeeded; and both final archive listings contain only the corrected package path.
+
+The ordered remaining implementation sequence is: address collection/timeout/clock/decoding behavior and tests; then finish documentation, deployment, and CI work.

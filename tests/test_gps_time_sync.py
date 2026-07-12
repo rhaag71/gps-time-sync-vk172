@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import gps_time_syc_vk172.gps_time_sync as gps_time_sync
-from gps_time_syc_vk172.gps_time_sync import (
+import gps_time_sync_vk172.gps_time_sync as gps_time_sync
+from gps_time_sync_vk172.gps_time_sync import (
     GPSStatus,
     parse_gga_sentence,
     parse_gsa_sentence,

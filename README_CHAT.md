@@ -1,6 +1,6 @@
-# Conversation Notes: gps-time-syc-vk172 Project
+# Conversation Notes: gps-time-sync-vk172 Project
 
-This file captures the key actions and guidance exchanged while building out the `gps-time-syc-vk172` project so the history is easy to reference later.
+This file captures the key actions and guidance exchanged while building out the `gps-time-sync-vk172` project so the history is easy to reference later.
 
 ## Session Highlights
 
@@ -19,7 +19,7 @@ This file captures the key actions and guidance exchanged while building out the
   - Improved status mode to print both UTC and local times, along with waiting for detailed metrics when requested.
 
 4. **Renaming**
-   - Renamed project folder and package from `new_python` to `gps_time_syc_vk172`.
+   - Renamed project folder and package from `new_python` to `gps_time_sync_vk172`.
    - Updated metadata, README, tests, and CLI entry points to match the new name.
 
 5. **Automation Script**
@@ -45,11 +45,11 @@ This file captures the key actions and guidance exchanged while building out the
   ```
 - Automated script (uses venv automatically):
   ```bash
-  sudo /home/rob/gps-time-syc-vk172/scripts/gps_sync.sh
+  sudo /home/rob/gps-time-sync-vk172/scripts/gps_sync.sh
   ```
 - Sample cron entry (root):
   ```
-  */15 * * * * /home/rob/gps-time-syc-vk172/scripts/gps_sync.sh >> /var/log/gps-sync.log 2>&1
+  */15 * * * * /home/rob/gps-time-sync-vk172/scripts/gps_sync.sh >> /var/log/gps-sync.log 2>&1
   ```
 
 Feel free to update this file with future changes or new instructions.
