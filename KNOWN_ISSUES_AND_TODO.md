@@ -14,7 +14,7 @@ The P0 package rename and packaging-metadata blockers are resolved in the curren
 
 The core implementation is substantial: it validates NMEA checksums, parses RMC/GGA/GSA/GSV messages, reports GPS status, avoids setting the clock in `--status` and `--no-set` modes, and has been used with VK172 hardware. The corrected `gps_time_sync_vk172` package now installs and builds cleanly, and the `gps-time-sync` entry point targets it. The canonical GPLv3 and Linux classifiers are accepted by current Hatchling.
 
-The P1 application-behavior pass has now defined status-collection and timeout semantics, hardened decoding and clock fallback behavior, and expanded deterministic tests. Remaining work centers on shell automation, broader release tests, documentation, deployment, and tooling.
+The P1 application-behavior pass has defined status-collection and timeout semantics, hardened decoding and clock fallback behavior, and expanded deterministic tests. The shell wrapper now also has external configuration, validation, help, and direct subprocess coverage. Remaining work centers on broader release documentation, deployment, and tooling.
 
 ## Confirmed strengths
 
@@ -149,7 +149,7 @@ Expect no matches, then inspect wheel contents and installed entry-point metadat
 
 ### P1 — release-critical coverage is incomplete (partially resolved)
 
-**Current behavior:** Packaging validation already demonstrates clean editable and wheel-only installs and both artifact builds. The behavioral suite now covers the requested parser, acquisition, status, CLI, decoding, timeout, and clock-fallback cases. Shell-wrapper missing-environment/executable behavior and later release/deployment concerns remain open.
+**Current behavior:** Packaging validation demonstrates clean editable and wheel-only installs and both artifact builds. The suite covers the requested parser, acquisition, status, CLI, decoding, timeout, clock-fallback, and shell-wrapper cases. Later release/deployment concerns and captured hardware fixtures remain open.
 
 **Why it matters:** The most failure-prone boundaries—packaging, serial input, NMEA edge cases, privileges, timeouts, and installed entry points—can regress without detection.
 
@@ -166,11 +166,11 @@ Expect no matches, then inspect wheel contents and installed entry-point metadat
 - every recognized/unknown fix mode; naive datetime rejection; failed `date` fallback;
 - Python application behavior listed above.
 
-Still add wrapper behavior when `.venv` or `gps-time-sync` is missing, plus option/override behavior once shell configurability is addressed. Captured, sanitized hardware NMEA fixtures remain a useful future complement to the deterministic in-test fixtures.
+Captured, sanitized hardware NMEA fixtures remain a useful future complement to the deterministic in-test fixtures.
 
 **Files likely affected:** `tests/`, new sanitized fixture files, CI configuration, and later shell-test files.
 
-**How to verify the remaining work:** Retain the clean environment/artifact checks from P0 and the 67 deterministic tests from this stage; add the deferred shell/release checks without physical hardware, root, network access, or real sleeps.
+**How to verify the remaining work:** Retain the clean environment/artifact checks from P0 and the 102 deterministic tests now present; add later release checks without physical hardware, root, network access, or real sleeps.
 
 ## Documentation
 
@@ -200,17 +200,17 @@ Still add wrapper behavior when `.venv` or `gps-time-sync` is missing, plus opti
 
 ## Automation and deployment
 
-### P1 — wrapper configuration is hardcoded (confirmed) and extensibility needs hardening (optional aspects)
+### P1 — wrapper configuration is hardcoded (resolved 2026-07-12)
 
-**Current behavior:** `scripts/gps_sync.sh` hardcodes `/dev/ttyACM0`, timeout `60`, and warmup `2`. Current variable expansions and executable arguments are quoted, but users must edit the tracked script to change settings; it cannot accept a stable by-id path or safely pass extra CLI arguments.
+**Current behavior:** `scripts/gps_sync.sh` retains built-in defaults of `/dev/ttyACM0`, baud 9600, timeout 60, warmup 2, and status window 2. It accepts `GPS_PORT`, `GPS_BAUDRATE`, `GPS_TIMEOUT`, `GPS_WARMUP`, and `GPS_STATUS_WINDOW`, plus `--port`, `--baudrate`, `--timeout`, `--warmup`, `--status-window`, `--status`, `--no-set`, `--verbose`, and `--help`. Precedence is command-line options over environment variables over built-in defaults.
 
 **Why it matters:** Local edits complicate upgrades, `/dev/ttyACM0` can change across boots, and unattended configuration cannot be managed externally.
 
-**Recommended change:** Preserve current defaults while allowing command-line options and/or documented environment overrides. If parsing is added, provide useful `--help`; support `/dev/serial/by-id/...`; validate numeric baud-rate, timeout, and warmup; preserve proper quoting; and safely pass explicitly supported additional CLI arguments. Run ShellCheck and add automated shell tests or documented manual cases.
+**Recommended change:** Completed for configuration, help, validation, quoting, stable device paths, safe flag pass-through, and automated tests. Run ShellCheck later when it is available locally or in the deferred tooling/CI stage.
 
-**Files likely affected:** `scripts/gps_sync.sh`, `README.md`, and shell tests/CI.
+**Files affected:** `scripts/gps_sync.sh`, the narrow wrapper section in `README.md`, and `tests/test_gps_sync_script.py`.
 
-**How to verify the eventual fix:** Exercise defaults, every override, spaces/metacharacters in paths/arguments, invalid/negative numerics, `--help`, missing `.venv`, missing executable, and ShellCheck.
+**How it was verified:** Thirty-five pytest subprocess tests use a temporary fake repository and executable to cover defaults, precedence, by-id/spaced/metacharacter paths, flags, numeric boundaries, parse errors, missing `.venv`/executable exit codes, and child exit propagation. `bash -n` passes. ShellCheck was not installed and was not added during this stage.
 
 ### P1 — unattended deployment guidance is not release-ready (confirmed documentation gap)
 
@@ -255,9 +255,9 @@ Still add wrapper behavior when `.venv` or `gps-time-sync` is missing, plus opti
 1. **P0 — complete:** The Git-aware package rename, accepted GPLv3/Linux classifiers, clean editable installation, imports, tests, module/console entry points, wheel/sdist builds, and wheel-only installation were restored and validated.
 2. **P1 — complete for application behavior:** Status completeness/window and timeout/warmup semantics are defined and tested.
 3. **P1 — complete:** Fix-mode output, strict serial decoding, and narrow `set_system_time()` fallback behavior are corrected and tested.
-4. **P1 — partially complete:** Deterministic NMEA, serial-failure, timeout, and CLI exit-code/call-count tests are present; shell-wrapper tests remain deferred to the shell stage.
+4. **P1 — complete for current scope:** Deterministic NMEA, serial-failure, timeout, CLI exit-code/call-count, and shell-wrapper tests are present.
 5. **P2:** Rewrite and consolidate documentation around actual user workflows, device discovery, privilege boundaries, stable device paths, and time-service interaction.
-6. **P1/P2:** Make wrapper configuration external and design a reviewed systemd service/timer deployment path.
+6. **P1/P2 — wrapper complete, deployment open:** Wrapper configuration is external; a reviewed systemd service/timer deployment path remains future work.
 7. **P2/P3:** Add focused CI, Ruff, ShellCheck, build/artifact smoke checks, and optionally static type checking.
 
 ## Release-readiness checklist
@@ -271,7 +271,7 @@ Still add wrapper behavior when `.venv` or `gps-time-sync` is missing, plus opti
 - [x] The generated wheel installs and imports in a second clean environment.
 - [x] Wheel/sdist contents contain the intended package and no misspelled package path.
 - [x] Status collection, timeout, malformed input, serial failures, CLI paths, and clock setting are covered.
-- [ ] Shell-wrapper failures and future configurability are covered.
+- [x] Shell-wrapper failures and external configurability are covered.
 - [ ] README instructions work from a clean clone and distinguish safe display modes from clock-setting mode.
 - [ ] CI checks supported Python versions, Ruff, ShellCheck, artifacts, and installed-package smoke tests.
 - [ ] Unattended deployment documents stable device naming, least privilege, logs, failure behavior, ordering, and competing time services.
@@ -364,4 +364,22 @@ The original audit established the P0 baseline above. The P0 repair was complete
 7. `source /tmp/gps-time-sync-audit-venv/bin/activate`, then `pytest`, `python -m gps_time_sync_vk172`, `gps-time-sync --help`, `git diff --check`, `git status --short`, `git diff --stat`, and `git diff --summary`.
    - Final result: **67 passed in 0.10s**; module execution succeeded; CLI help displayed the new `--status-window` option and post-warmup timeout wording; `git diff --check` produced no output; and only this issue document, the application module, and its main test module are modified in this stage.
 
-The remaining implementation sequence is: shell-wrapper work and tests; then documentation, deployment, and CI/tooling work.
+### Shell-wrapper validation log (2026-07-12)
+
+1. Before editing, `git status --short` showed the three expected uncommitted P1 behavioral-stage files, and `pytest` in the disposable audit environment reported **67 passed in 0.10s**.
+2. `command -v shellcheck || true`
+   - Result: no path was printed; ShellCheck is not installed, so no system package was installed during this stage.
+3. `pytest -q tests/test_gps_sync_script.py`
+   - Result: **35 passed in 0.30s** using temporary fake repository layouts and fake `gps-time-sync` executables.
+4. `bash -n scripts/gps_sync.sh`
+   - Result: exit code 0 with no output.
+5. `scripts/gps_sync.sh --help`
+   - Result: exit code 0 without requiring `.venv`; output lists every supported option/environment variable, built-in defaults, and `command-line options > environment variables > built-in defaults` precedence.
+6. `pytest`
+   - Result after implementation and narrow README edits: **102 passed in 0.37s** on Python 3.13.5.
+7. A one-off Python invocation loaded the automated test fixture, created a temporary fake wrapper layout/executable, set environment port/timeout values, then supplied a spaced by-id path, decimal timeout, `--status`, and `--verbose` on the command line.
+   - Result: child exit code 0 and exact recorded arguments `['--port', '/dev/serial/by-id/GPS receiver with spaces', '--baudrate', '9600', '--timeout', '12.5', '--warmup', '2', '--status-window', '2', '--status', '--verbose']`, demonstrating quoting and command-line precedence without GPS hardware.
+8. Final commands: `pytest`, `bash -n scripts/gps_sync.sh`, `scripts/gps_sync.sh --help`, conditional local ShellCheck detection, `git diff --check`, `git status --short`, and `git diff --stat`.
+   - Result: **102 passed in 0.38s**; Bash syntax and standalone help succeeded; ShellCheck was unavailable; `git diff --check` produced no output; and the status showed only this issue document, `README.md`, `scripts/gps_sync.sh`, and the new wrapper test module.
+
+The remaining implementation sequence is: broader README/supporting-document work, deployment design, and CI/tooling work including ShellCheck execution.

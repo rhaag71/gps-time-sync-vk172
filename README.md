@@ -48,16 +48,43 @@ Key flags:
 
 ## Automated Sync Script
 
-The repository includes a helper script that activates the bundled virtual environment and runs the GPS sync command with configurable timing parameters:
+The repository includes a helper script that runs the repository virtual environment's `gps-time-sync` executable directly:
 
 ```bash
 scripts/gps_sync.sh
 ```
 
-Script defaults (edit `scripts/gps_sync.sh` to adjust):
+Built-in defaults:
+
 - Port: `/dev/ttyACM0`
+- Baud rate: 9600
 - Timeout: 60 seconds
 - Warmup: 2 seconds before parsing sentences
+- Status collection window: 2 seconds
+
+Override settings with command-line options:
+
+```bash
+scripts/gps_sync.sh --port /dev/ttyACM1 --baudrate 9600 --timeout 90 --warmup 1 --status-window 3 --status
+```
+
+For unattended use, prefer a stable device path:
+
+```bash
+scripts/gps_sync.sh --port /dev/serial/by-id/usb-u-blox_GPS-if00 --no-set
+```
+
+Environment variables provide another configuration layer:
+
+```bash
+GPS_PORT=/dev/ttyACM1 GPS_TIMEOUT=90 GPS_WARMUP=1 scripts/gps_sync.sh --status
+```
+
+Supported variables are `GPS_PORT`, `GPS_BAUDRATE`, `GPS_TIMEOUT`, `GPS_WARMUP`, and `GPS_STATUS_WINDOW`. Precedence is command-line options, then environment variables, then built-in defaults. See the complete usage without requiring a virtual environment:
+
+```bash
+scripts/gps_sync.sh --help
+```
 
 > **Tip:** Run the script as root (or grant the executable `CAP_SYS_TIME`) if you want the system clock updated automatically.
 When invoking manually with elevation, call it with an absolute path so `sudo` can find the virtualenv binary, e.g.
