@@ -14,16 +14,16 @@ The P0 package rename and packaging-metadata blockers are resolved in the curren
 
 The core implementation is substantial: it validates NMEA checksums, parses RMC/GGA/GSA/GSV messages, reports GPS status, avoids setting the clock in `--status` and `--no-set` modes, and has been used with VK172 hardware. The corrected `gps_time_sync_vk172` package now installs and builds cleanly, and the `gps-time-sync` entry point targets it. The canonical GPLv3 and Linux classifiers are accepted by current Hatchling.
 
-The P1 application-behavior pass has defined status-collection and timeout semantics, hardened decoding and clock fallback behavior, and expanded deterministic tests. The shell wrapper now also has external configuration, validation, help, and direct subprocess coverage. Remaining work centers on broader release documentation, deployment, and tooling.
+The packaging, application behavior, shell wrapper, and user-facing documentation have now been consolidated and validated. Remaining work centers on hardened unattended deployment and release tooling.
 
 ## Confirmed strengths
 
 - **Confirmed:** The distribution name is `gps-time-sync-vk172`; the project URLs reference the actual GitHub repository; the license metadata and classifier intend GPLv3; `LICENSE` contains GPLv3; and the OS classifier targets Unix/Linux.
 - **Confirmed:** The primary README hardware examples use `/dev/ttyACM0`. Its `/home/rob/...` path is explicitly labeled as the author's example and is not itself a defect.
 - **Confirmed:** The CLI distinguishes status display, display-only operation, serial errors, acquisition timeout, permission errors, and other clock-setting errors with separate paths.
-- **Confirmed:** Parsing accepts alternate talker prefixes structurally by checking sentence types with `endswith()` or the final three characters, although representative `GN` streams are not tested.
+- **Confirmed:** Parsing accepts alternate talker prefixes structurally, and representative `GN` RMC/GGA/GSA/GSV inputs are tested.
 - **Confirmed:** The Bash wrapper uses strict shell mode, derives the repository path from its own location, quotes current expansions, and gives distinct errors for a missing virtual environment and executable.
-- **Confirmed:** Existing unit tests cover basic valid/invalid RMC parsing, one GGA/GSA/GSV example, a status summary, three clock-setting paths, basic acquisition, and one CLI status path. All 14 tests passed from the clean editable installation during P0 validation.
+- **Confirmed:** The current 102-test suite covers packaging-era smoke behavior, NMEA parsing, status collection, timing, serial failures, clock-setting paths, CLI behavior, and the shell wrapper.
 
 ## Known critical issues
 
@@ -174,29 +174,29 @@ Captured, sanitized hardware NMEA fixtures remain a useful future complement to 
 
 ## Documentation
 
-### P2 — the main README is scaffold-first and operational guidance is fragmented (confirmed)
+### P2 — the main README is scaffold-first and operational guidance is fragmented (resolved 2026-07-12)
 
-**Current behavior:** The opening emphasizes `pyproject.toml`, Hatchling, and layout before clearly presenting the utility's practical purpose. The feature list and `python -m` example use the misspelled package. The cron example is duplicated. Installation, status-only use, display-only use, actual clock synchronization, automation, and troubleshooting are not cleanly separated. Device discovery is not explained. The default CLI port (`/dev/ttyUSB0`) also differs from README/script examples (`/dev/ttyACM0`) without explanation.
+**Current behavior:** `README.md` is the authoritative, user-first guide. It leads with the practical purpose and tested hardware; separates installation, discovery, safe modes, clock setting, command reference, wrapper configuration, cron, troubleshooting, limitations, and development; explains the CLI/wrapper default-port difference; and contains one generic cron example.
 
 **Why it matters:** A prospective user cannot quickly determine what the tool does, which device to select, or which command is safe versus privileged.
 
-**Recommended change:** Lead with purpose and tested hardware, then organize installation, device discovery, status, no-set display, clock-setting, automation, and troubleshooting separately. Document `dmesg --follow` and `ls -l /dev/serial/by-id/`; recommend a stable `/dev/serial/by-id/...` path for unattended use instead of relying only on `/dev/ttyACM0`. Explain that `--status` gathers detail and never sets time, `--no-set` reports the acquired time without setting it, and normal mode sets the clock after acquisition. Explain that `dialout` permits serial access but does not grant clock-setting permission. Discuss root versus carefully scoped `CAP_SYS_TIME`, and possible Chrony, NTP, or `systemd-timesyncd` interaction/conflict. Keep the labeled `/home/rob` example if desired, correct its project spelling, and add a generic `/path/to/gps-time-sync-vk172/...` example.
+**Recommended change:** Completed. Preserve the current user-first flow and verify future option/default changes against generated help.
 
-**Files likely affected:** `README.md` (later work only).
+**Files affected:** `README.md`.
 
-**How to verify the eventual fix:** Follow the README from a clean clone as an unprivileged user, confirm safe status/no-set flows are obvious, device discovery works, privilege boundaries are accurate, and the cron example appears once.
+**How it was verified:** CLI and wrapper help were compared with documented options/defaults; relative links and target files were checked; the stale-name search found no active documentation matches; and the command/test validation below passed.
 
-### P2 — supporting READMEs need a clear disposition (confirmed)
+### P2 — supporting READMEs need a clear disposition (resolved 2026-07-12)
 
-**Current behavior:** `README_CHAT.md` reads as conversation-derived development history, retains old names and author paths, claims comprehensive test coverage without current clean-install evidence, and ends with “Feel free to update this file.” `README_VENV.md` duplicates basic setup from the main README, retains old project paths, and expects a specific Python 3.11 version despite `requires-python = ">=3.10"`.
+**Current behavior:** The former conversation notes are now `docs/development-notes.md`, clearly labeled as history and stripped of duplicate operations guidance and conversational filler. The former virtual-environment README is now `docs/contributor-setup.md`, focused on Python 3.10+ contributor setup, validation, builds, and stale-environment recovery. Both are linked from the main README.
 
 **Why it matters:** Multiple overlapping setup narratives drift and make development history look like current user documentation.
 
-**Recommended change:** Move useful history from `README_CHAT.md` to a clearly named file such as `docs/development-notes.md`, or retain it explicitly as development history; remove conversational filler and unsupported/current claims. Merge `README_VENV.md` into the main README or rename it as a focused contributor setup guide under `docs/`. Correct every old package and directory spelling in retained content.
+**Recommended change:** Completed with Git-aware moves. Keep operational guidance authoritative in `README.md` and contributor-only material focused under `docs/`.
 
-**Files likely affected:** `README_CHAT.md`, `README_VENV.md`, `README.md`, and a future `docs/` directory.
+**Files affected:** `README.md`, `docs/development-notes.md`, and `docs/contributor-setup.md`.
 
-**How to verify the eventual fix:** Search for old names and filler, follow every setup command from a clean clone, and ensure each document has a distinct audience and purpose.
+**How it was verified:** File/link checks succeeded; the two documents have distinct stated audiences; no active documentation contains the old names or filler.
 
 ## Automation and deployment
 
@@ -214,7 +214,7 @@ Captured, sanitized hardware NMEA fixtures remain a useful future complement to 
 
 ### P1 — unattended deployment guidance is not release-ready (confirmed documentation gap)
 
-**Current behavior:** The README recommends a root cron job executing a mutable user checkout; no systemd unit/timer design is provided. Logging, restart/failure behavior, ordering, and time-service interaction are largely unspecified.
+**Current behavior:** The README now presents one generic root-cron example with a stable by-id path, explicit logging, managed-checkout caution, privilege boundaries, and network-time-service interaction. A reviewed systemd unit/timer, restart/failure policy, and service ordering are still not implemented.
 
 **Why it matters:** Broad root execution from a development tree and unstable device names increase operational and security risk; competing time services can immediately counteract GPS adjustments.
 
@@ -256,7 +256,7 @@ Captured, sanitized hardware NMEA fixtures remain a useful future complement to 
 2. **P1 — complete for application behavior:** Status completeness/window and timeout/warmup semantics are defined and tested.
 3. **P1 — complete:** Fix-mode output, strict serial decoding, and narrow `set_system_time()` fallback behavior are corrected and tested.
 4. **P1 — complete for current scope:** Deterministic NMEA, serial-failure, timeout, CLI exit-code/call-count, and shell-wrapper tests are present.
-5. **P2:** Rewrite and consolidate documentation around actual user workflows, device discovery, privilege boundaries, stable device paths, and time-service interaction.
+5. **P2 — complete:** User documentation is consolidated around actual workflows, device discovery, privilege boundaries, stable device paths, and time-service interaction.
 6. **P1/P2 — wrapper complete, deployment open:** Wrapper configuration is external; a reviewed systemd service/timer deployment path remains future work.
 7. **P2/P3:** Add focused CI, Ruff, ShellCheck, build/artifact smoke checks, and optionally static type checking.
 
@@ -272,7 +272,7 @@ Captured, sanitized hardware NMEA fixtures remain a useful future complement to 
 - [x] Wheel/sdist contents contain the intended package and no misspelled package path.
 - [x] Status collection, timeout, malformed input, serial failures, CLI paths, and clock setting are covered.
 - [x] Shell-wrapper failures and external configurability are covered.
-- [ ] README instructions work from a clean clone and distinguish safe display modes from clock-setting mode.
+- [x] README instructions distinguish safe display modes from clock-setting mode and use current commands/options.
 - [ ] CI checks supported Python versions, Ruff, ShellCheck, artifacts, and installed-package smoke tests.
 - [ ] Unattended deployment documents stable device naming, least privilege, logs, failure behavior, ordering, and competing time services.
 
@@ -382,4 +382,17 @@ The original audit established the P0 baseline above. The P0 repair was complete
 8. Final commands: `pytest`, `bash -n scripts/gps_sync.sh`, `scripts/gps_sync.sh --help`, conditional local ShellCheck detection, `git diff --check`, `git status --short`, and `git diff --stat`.
    - Result: **102 passed in 0.38s**; Bash syntax and standalone help succeeded; ShellCheck was unavailable; `git diff --check` produced no output; and the status showed only this issue document, `README.md`, `scripts/gps_sync.sh`, and the new wrapper test module.
 
-The remaining implementation sequence is: broader README/supporting-document work, deployment design, and CI/tooling work including ShellCheck execution.
+### Documentation consolidation validation log (2026-07-12)
+
+1. Before editing, the current README, both supporting READMEs, this issue record, `pyproject.toml`, generated CLI help, and wrapper help were inspected. `pytest` reported **102 passed in 0.38s**, and `git status --short` captured the completed wrapper-stage changes.
+2. Git-aware moves renamed `README_CHAT.md` to `docs/development-notes.md` and `README_VENV.md` to `docs/contributor-setup.md`.
+3. Post-edit commands: `pytest`, `bash -n scripts/gps_sync.sh`, `gps-time-sync --help`, `scripts/gps_sync.sh --help`, and `python -m gps_time_sync_vk172`.
+   - Result: **102 passed in 0.37s** on Python 3.13.5; Bash syntax passed; both help commands succeeded; and module execution printed the expected package message.
+4. Relative targets `KNOWN_ISSUES_AND_TODO.md`, `docs/development-notes.md`, `docs/contributor-setup.md`, and `LICENSE` were checked with `test -f`; Markdown links in the three current guides were listed with `rg` and manually compared with those targets.
+   - Result: all linked local files exist and paths resolve relative to their containing documents.
+5. `grep -RIn --exclude-dir=.git --exclude-dir=.venv -e 'gps_time_syc_vk172' -e 'gps-time-syc-vk172' .`
+   - Result: old spellings remain only in intentionally preserved commands/results in this document's historical audit logs; no active user-facing guide contains them.
+6. `git diff --check`
+   - Result: exit code 0 with no output.
+
+The remaining implementation sequence is: systemd/deployment design and CI/tooling work, including GitHub Actions, Ruff, ShellCheck integration, and optional typing.
