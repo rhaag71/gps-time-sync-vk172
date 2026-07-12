@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import errno
 import logging
 import os
 import subprocess
@@ -153,11 +154,7 @@ class GPSStatus:
             2: "2D",
             3: "3D",
         }
-        if self.fix_mode is None:
-            lines.append("Fix mode: Unknown")
-        else:
-            description = fix_mode_map.get(self.fix_mode, "Other")
-            lines.append(f"Fix mode: {self.fix_mode}D ({description})")
+        lines.append(f"Fix mode: {fix_mode_map.get(self.fix_mode, 'Unknown')}")
 
         if self.satellites_in_use is None:
             lines.append("Satellites in use: Unknown")
@@ -179,19 +176,13 @@ class GPSStatus:
         return lines
 
     def has_detail_metrics(self) -> bool:
-        """Return True when any detailed fix information beyond status is present."""
-        return any(
-            metric is not None
-            for metric in (
-                self.fix_quality,
-                self.fix_mode,
-                self.satellites_in_use,
-                self.satellites_in_view,
-                self.hdop,
-                self.pdop,
-                self.vdop,
-            )
+        """Return True when both fix and satellite detail are available."""
+        has_fix_information = self.fix_quality is not None or self.fix_mode is not None
+        has_satellite_information = (
+            self.satellites_in_use is not None
+            or self.satellites_in_view is not None
         )
+        return has_fix_information and has_satellite_information
 
 
 def _parse_rmc_fields(fields: list[str], raw_sentence: str) -> Optional[RMCData]:
@@ -329,6 +320,7 @@ def acquire_gps_time(
     timeout: float = 30.0,
     warmup: float = 2.0,
     require_detailed_status: bool = False,
+    status_collection_window: float = 2.0,
 ) -> tuple[dt.datetime, GPSStatus]:
     """
     Read NMEA sentences from a GPS receiver until a valid UTC time is found.
@@ -336,8 +328,10 @@ def acquire_gps_time(
     Args:
         port: Serial device path (e.g., /dev/ttyUSB0).
         baudrate: Baud rate for the serial connection (GK172 defaults to 9600).
-        timeout: Maximum number of seconds to wait for a valid fix.
+        timeout: Maximum seconds to acquire data after warmup completes.
         warmup: Seconds to wait before parsing to let the GPS settle.
+        require_detailed_status: Continue briefly after a valid timestamp for status.
+        status_collection_window: Maximum post-fix status collection time.
 
     Returns:
         A tuple of (timezone-aware datetime in UTC, GPSStatus summary).
@@ -346,6 +340,13 @@ def acquire_gps_time(
         TimeoutError: When a valid RMC sentence is not observed before timeout.
         serial.SerialException: For serial communication errors.
     """
+    if timeout < 0:
+        raise ValueError("timeout must be non-negative")
+    if warmup < 0:
+        raise ValueError("warmup must be non-negative")
+    if status_collection_window < 0:
+        raise ValueError("status collection window must be non-negative")
+
     LOGGER.info(
         "Connecting to GPS receiver on %s with baud %d (timeout=%.1fs)",
         port,
@@ -354,21 +355,35 @@ def acquire_gps_time(
     )
 
     status = GPSStatus()
-    deadline = time.monotonic() + timeout
     with serial.Serial(port=port, baudrate=baudrate, timeout=1) as conn:
         if warmup > 0:
             LOGGER.debug("Warming up GPS stream for %.1f seconds", warmup)
             time.sleep(warmup)
             conn.reset_input_buffer()
 
+        deadline = time.monotonic() + timeout
         gps_time: Optional[dt.datetime] = None
-        while time.monotonic() < deadline:
+        status_deadline: Optional[float] = None
+        observed_categories: set[str] = set()
+        gsv_parts: dict[str, set[int]] = {}
+        gsv_totals: dict[str, int] = {}
+        completed_gsv_talkers: set[str] = set()
+
+        while True:
+            now = time.monotonic()
+            active_deadline = deadline
+            if status_deadline is not None:
+                active_deadline = min(active_deadline, status_deadline)
+            if now >= active_deadline:
+                break
+
+            conn.timeout = min(1.0, active_deadline - now)
             raw = conn.readline()
             if not raw:
                 continue
 
             try:
-                sentence = raw.decode("ascii", errors="ignore").strip()
+                sentence = raw.decode("ascii").strip()
             except UnicodeDecodeError:
                 LOGGER.debug("Skipping undecodable sentence: %r", raw)
                 continue
@@ -387,12 +402,16 @@ def acquire_gps_time(
                 if rmc.timestamp is not None and gps_time is None:
                     gps_time = rmc.timestamp
                     LOGGER.info("Received GPS time: %s", gps_time.isoformat())
-                    if not require_detailed_status or status.has_detail_metrics():
+                    if not require_detailed_status:
                         return gps_time, status
+                    status_deadline = min(
+                        deadline, time.monotonic() + status_collection_window
+                    )
 
             elif message_type == "GGA":
                 gga = _parse_gga_fields(fields, sentence)
                 if gga:
+                    observed_categories.add("GGA")
                     if gga.fix_quality is not None:
                         status.fix_quality = gga.fix_quality
                     if gga.satellites_in_use is not None:
@@ -403,6 +422,7 @@ def acquire_gps_time(
             elif message_type == "GSA":
                 gsa = _parse_gsa_fields(fields, sentence)
                 if gsa:
+                    observed_categories.add("GSA")
                     if gsa.fix_mode is not None:
                         status.fix_mode = gsa.fix_mode
                     if gsa.satellites_in_use is not None:
@@ -416,18 +436,38 @@ def acquire_gps_time(
 
             elif message_type == "GSV":
                 gsv = _parse_gsv_fields(fields, sentence)
-                if gsv and gsv.satellites_in_view is not None:
-                    status.satellites_in_view = gsv.satellites_in_view
+                if gsv:
+                    observed_categories.add("GSV")
+                    if gsv.satellites_in_view is not None:
+                        status.satellites_in_view = gsv.satellites_in_view
+                    total_messages = _safe_int(fields[1])
+                    message_number = _safe_int(fields[2])
+                    if (
+                        total_messages is not None
+                        and message_number is not None
+                        and total_messages > 0
+                        and 1 <= message_number <= total_messages
+                    ):
+                        talker = fields[0][:-3]
+                        if gsv_totals.get(talker) != total_messages:
+                            gsv_totals[talker] = total_messages
+                            gsv_parts[talker] = set()
+                        gsv_parts[talker].add(message_number)
+                        if gsv_parts[talker] == set(range(1, total_messages + 1)):
+                            completed_gsv_talkers.add(talker)
 
-            if gps_time is not None and (
-                not require_detailed_status or status.has_detail_metrics()
+            status_is_complete = "GGA" in observed_categories and (
+                "GSA" in observed_categories or bool(completed_gsv_talkers)
+            )
+            if (
+                gps_time is not None
+                and status.has_detail_metrics()
+                and status_is_complete
             ):
                 return gps_time, status
 
     if gps_time is not None:
-        LOGGER.warning(
-            "Timed out while waiting for detailed status; returning partial data."
-        )
+        LOGGER.info("Status collection ended; returning available partial data.")
         return gps_time, status
 
     raise TimeoutError(f"Timed out waiting for GPS fix on {port}")
@@ -447,20 +487,28 @@ def set_system_time(target: dt.datetime) -> None:
     try:
         time.clock_settime(time.CLOCK_REALTIME, timestamp)
         return
-    except AttributeError:
+    except (AttributeError, NotImplementedError):
         LOGGER.debug("clock_settime unavailable; falling back to date command")
     except PermissionError as exc:
         raise PermissionError(
             "Setting system time requires root privileges or CAP_SYS_TIME"
         ) from exc
+    except OSError as exc:
+        unsupported_errnos = {errno.ENOSYS, errno.ENOTSUP, errno.EOPNOTSUPP}
+        if exc.errno not in unsupported_errnos:
+            raise
+        LOGGER.debug("clock_settime unsupported; falling back to date command")
 
     formatted = target.strftime("%Y-%m-%d %H:%M:%S")
-    result = subprocess.run(
-        ["date", "-u", "-s", formatted],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["date", "-u", "-s", formatted],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"Failed to run date command: {exc}") from exc
 
     if result.returncode != 0:
         stderr = result.stderr.strip() or result.stdout.strip()
@@ -475,6 +523,13 @@ def cli(argv: Optional[list[str]] = None) -> int:
             "Run with root privileges or CAP_SYS_TIME to allow clock updates."
         )
     )
+
+    def non_negative_float(value: str) -> float:
+        parsed = float(value)
+        if parsed < 0:
+            raise argparse.ArgumentTypeError("must be non-negative")
+        return parsed
+
     parser.add_argument(
         "--port",
         default="/dev/ttyUSB0",
@@ -488,15 +543,21 @@ def cli(argv: Optional[list[str]] = None) -> int:
     )
     parser.add_argument(
         "--timeout",
-        type=float,
+        type=non_negative_float,
         default=60.0,
-        help="Seconds to wait for a valid GPS fix (default: %(default)s)",
+        help="Seconds to wait for GPS data after warmup (default: %(default)s)",
     )
     parser.add_argument(
         "--warmup",
-        type=float,
+        type=non_negative_float,
         default=2.0,
         help="Seconds to wait after connecting before parsing sentences",
+    )
+    parser.add_argument(
+        "--status-window",
+        type=non_negative_float,
+        default=2.0,
+        help="Seconds to collect status after the first fix (default: %(default)s)",
     )
     parser.add_argument(
         "--no-set",
@@ -531,6 +592,7 @@ def cli(argv: Optional[list[str]] = None) -> int:
             timeout=args.timeout,
             warmup=args.warmup,
             require_detailed_status=show_status,
+            status_collection_window=args.status_window,
         )
     except serial.SerialException as exc:
         LOGGER.error("Unable to communicate with GPS receiver: %s", exc)

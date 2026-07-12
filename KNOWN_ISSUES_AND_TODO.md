@@ -14,7 +14,7 @@ The P0 package rename and packaging-metadata blockers are resolved in the curren
 
 The core implementation is substantial: it validates NMEA checksums, parses RMC/GGA/GSA/GSV messages, reports GPS status, avoids setting the clock in `--status` and `--no-set` modes, and has been used with VK172 hardware. The corrected `gps_time_sync_vk172` package now installs and builds cleanly, and the `gps-time-sync` entry point targets it. The canonical GPLv3 and Linux classifiers are accepted by current Hatchling.
 
-The highest-value remaining work is to define status-collection and timeout semantics, harden clock-setting and serial-error behavior, expand deterministic tests, reorganize the user documentation, and provide a safer unattended deployment path.
+The P1 application-behavior pass has now defined status-collection and timeout semantics, hardened decoding and clock fallback behavior, and expanded deterministic tests. Remaining work centers on shell automation, broader release tests, documentation, deployment, and tooling.
 
 ## Confirmed strengths
 
@@ -73,87 +73,87 @@ Expect no matches, then inspect wheel contents and installed entry-point metadat
 
 ## Code correctness and behavior
 
-### P1 — status collection can stop after only one detail metric (confirmed)
+### P1 — status collection can stop after only one detail metric (resolved 2026-07-12)
 
-**Current behavior:** `GPSStatus.has_detail_metrics()` uses `any(...)`. In status mode, acquisition can return after a valid RMC timestamp plus the first single metric received from a GGA, GSA, or GSV sentence. Multipart GSV completeness is not tracked.
+**Current behavior:** Detailed status mode captures the first valid RMC timestamp and then collects for at most `--status-window` seconds (default 2.0), capped by the overall acquisition deadline. It returns early when it has useful fix/satellite detail plus GGA and either GSA or every numbered part of an observed GSV group for a talker. Otherwise it returns available partial status when the short window or overall timeout expires. Non-status acquisition still returns immediately on the first valid timestamp.
 
 **Why it matters:** Status output can omit useful information that would have arrived moments later, and its completeness depends on receiver sentence order.
 
-**Recommended change:** Use bounded post-fix collection: capture the first valid RMC timestamp; continue for a short configurable collection window; return early only after a documented useful set has been collected; never exceed the overall timeout; and return partial status cleanly when the window expires. “Complete enough” should be receiver-tolerant—for example, timestamp plus one fix indication and useful satellite/fix detail, or a completed observed GSV group—not a requirement that every receiver emit every possible sentence. Receivers that emit only RMC/GGA must remain supported.
+**Recommended change:** Completed. Preserve the receiver-tolerant completeness rule and bounded partial-return behavior.
 
 **Files likely affected:** `src/gps_time_sync_vk172/gps_time_sync.py`, CLI documentation, and acquisition/status tests.
 
-**How to verify the eventual fix:** Replay differently ordered RMC/GGA/GSA/multipart-GSV fixtures, receivers omitting sentence types, and a mocked deadline; assert early return only at the documented threshold and partial return at the collection window/overall timeout.
+**How it was verified:** Deterministic tests cover RMC/GGA/GSA in multiple orders, complete and incomplete multipart GSV, RMC+GGA partial return, and collection-window/overall-timeout bounds.
 
-### P1 — misleading fix-mode formatting (confirmed)
+### P1 — misleading fix-mode formatting (resolved 2026-07-12)
 
-**Current behavior:** Known values are formatted as the numeric value plus `D` and then their description. This produces `Fix mode: 3D (3D)` and `Fix mode: 1D (No fix)`; unknown numeric values similarly become a fabricated dimensional label.
+**Current behavior:** Output is exactly `Fix mode: No fix`, `Fix mode: 2D`, `Fix mode: 3D`, or `Fix mode: Unknown`.
 
 **Why it matters:** The output is redundant for 2D/3D and actively misleading for “No fix” and unknown modes.
 
-**Recommended change:** Emit exactly `Fix mode: No fix`, `Fix mode: 2D`, `Fix mode: 3D`, or `Fix mode: Unknown`.
+**Recommended change:** Completed.
 
 **Files likely affected:** `src/gps_time_sync_vk172/gps_time_sync.py` and status-format tests.
 
-**How to verify the eventual fix:** Parameterize tests for recognized values 1, 2, and 3, `None`, and arbitrary unknown numeric/string-derived values.
+**How it was verified:** Parameterized tests cover `None`, 1, 2, 3, and unknown numeric value 9.
 
-### P1 — serial decoding policy is internally inconsistent (confirmed)
+### P1 — serial decoding policy is internally inconsistent (resolved 2026-07-12)
 
-**Current behavior:** Serial bytes are decoded with `raw.decode("ascii", errors="ignore")`, inside a `try` that catches `UnicodeDecodeError`. Ignoring errors prevents that exception path from being reached.
+**Current behavior:** Serial input uses strict ASCII decoding. `UnicodeDecodeError` is logged at debug level and the entire malformed read is skipped, so removing a bad byte cannot turn damaged input into a different valid-looking sentence.
 
 **Why it matters:** Corrupt/non-ASCII bytes are silently removed and could transform a damaged sentence before checksum validation, while the code suggests errors are explicitly handled.
 
-**Recommended change:** Choose one policy: strict ASCII decoding with a real exception-and-skip path, or deliberately tolerant decoding with the unreachable handler removed and the behavior documented. Strict decoding is easier to reason about for checksum-protected NMEA.
+**Recommended change:** Completed with the strict policy.
 
 **Files likely affected:** `src/gps_time_sync_vk172/gps_time_sync.py` and serial-input tests.
 
-**How to verify the eventual fix:** Feed malformed bytes and non-ASCII bytes before, within, and after sentences; assert deterministic rejection or documented tolerant behavior without a crash.
+**How it was verified:** Tests inject a non-ASCII byte before, inside, and after otherwise valid sentence data, confirm the malformed read is skipped, and then acquire from the next valid ASCII sentence.
 
-### P1 — timeout includes serial warmup without saying so (confirmed)
+### P1 — timeout includes serial warmup without saying so (resolved 2026-07-12)
 
-**Current behavior:** `deadline = time.monotonic() + timeout` is calculated before opening/warming the serial stream, and `time.sleep(warmup)` occurs afterward. Warmup therefore consumes the advertised acquisition timeout and can exhaust it entirely.
+**Current behavior:** Serial warmup completes first; the monotonic acquisition deadline is then set. `timeout` therefore means GPS data-acquisition time after warmup. Timeout, warmup, and status-window values must be non-negative. Each serial read timeout is capped to the remaining active deadline, and the post-fix window can never extend the overall acquisition deadline.
 
 **Why it matters:** Users may receive substantially less fix-acquisition time than requested, especially with large warmup values; documentation currently calls timeout the wait for a valid fix.
 
-**Recommended change:** Deliberately select and document one contract: timeout covers the entire operation including open/warmup, or acquisition timeout begins after warmup. Validate non-negative numeric values and make the overall bound explicit.
+**Recommended change:** Completed using the post-warmup acquisition-time contract.
 
 **Files likely affected:** `src/gps_time_sync_vk172/gps_time_sync.py`, `scripts/gps_sync.sh`, README/CLI help, and timeout tests.
 
-**How to verify the eventual fix:** Use a mocked monotonic clock and mocked sleep/serial reads—never real sleeps—to assert boundary behavior, including warmup equal to or greater than timeout.
+**How it was verified:** Mocked monotonic time, sleep, and serial reads cover zero/positive warmup, zero/negative timeout, negative warmup/window, empty reads, missing fix, partial status, and the authoritative overall deadline without real sleeping.
 
-### P1 — clock-setting fallback recognizes too narrow an availability signal (confirmed implementation; additional signals require validation)
+### P1 — clock-setting fallback recognizes too narrow an availability signal (resolved 2026-07-12)
 
-**Current behavior:** `set_system_time()` falls back to `date` only for `AttributeError`. `PermissionError` is kept distinct, which is good. Unsupported implementations may instead raise `NotImplementedError` or selected `OSError` values; exact platform behavior needs validation.
+**Current behavior:** `set_system_time()` falls back to `date` only for `AttributeError`, `NotImplementedError`, or `OSError` with `ENOSYS`, `ENOTSUP`, or `EOPNOTSUPP`. Other `OSError` values propagate. `PermissionError` is translated to the existing privilege diagnostic and never falls back. Naive datetimes are rejected. Nonzero `date` results and failure to execute `date` retain useful diagnostics.
 
 **Why it matters:** A supported fallback may never run on some Unix/Python combinations, while an overly broad fallback could hide permission, argument, or system failures. The `date` failure diagnostic is currently retained and should stay clear.
 
-**Recommended change:** Define a deliberately narrow fallback policy for genuinely unavailable clock-setting functionality. Consider `NotImplementedError` and only specifically justified `OSError.errno` values. Never turn permission errors into a fallback attempt.
+**Recommended change:** Completed with the narrow unsupported-function policy above.
 
 **Files likely affected:** `src/gps_time_sync_vk172/gps_time_sync.py` and clock-setting tests.
 
-**How to verify the eventual fix:** Test naive datetime rejection, successful `clock_settime`, permission failure, successful `date` fallback, failed `date` fallback with its diagnostic, `NotImplementedError`, and each selected unsupported `OSError` value.
+**How it was verified:** Tests cover successful `clock_settime`, naive rejection, permission behavior, AttributeError/NotImplementedError/supported-errno fallbacks, unsupported `EIO` propagation, successful `date`, nonzero `date`, and missing `date` diagnostics.
 
-### P1 — serial and CLI failure paths need validation (probable—validate)
+### P1 — serial and CLI failure paths need validation (resolved for application paths 2026-07-12)
 
-**Current behavior:** The CLI catches `serial.SerialException` and `TimeoutError`, but tests do not exercise serial-open failures, read failures, empty reads through a deadline, most CLI exit codes, or all clock-set call-count guarantees.
+**Current behavior:** Deterministic tests now exercise serial-open/read failures, empty reads through a deadline, successful CLI operation, exit codes 2–5, and exact clock-set call counts. `--status` and `--no-set` never call the setter; normal mode calls it exactly once.
 
 **Why it matters:** Hardware disconnects and permissions are normal deployment failures; untested behavior may hang, leak unclear diagnostics, or accidentally call the clock setter.
 
-**Recommended change:** Add deterministic mocks for open/read/empty-read cases and cover every CLI return path. Explicitly assert that `--no-set` and `--status` never call the setter and normal mode calls it exactly once.
+**Recommended change:** Completed for the Python application. Shell-wrapper failure tests remain open in the separate automation/test items.
 
 **Files likely affected:** `tests/test_gps_time_sync.py`, possibly implementation after tests expose defects.
 
-**How to verify the eventual fix:** Run the parameterized failure tests and assert exit codes, diagnostics, deadlines, and setter call counts.
+**How it was verified:** The expanded suite asserts exit codes, deadlines, error propagation, and setter call counts without hardware or privilege changes.
 
 ## Tests and validation
 
-### P1 — release-critical coverage is incomplete (confirmed)
+### P1 — release-critical coverage is incomplete (partially resolved)
 
-**Current behavior:** The two small test modules use the old package imports. Coverage does not currently demonstrate a clean install/build/wheel install, and many parser, acquisition, status, CLI, fallback, and wrapper edge cases are absent. This review could not run the suite from a clean install because packaging failed.
+**Current behavior:** Packaging validation already demonstrates clean editable and wheel-only installs and both artifact builds. The behavioral suite now covers the requested parser, acquisition, status, CLI, decoding, timeout, and clock-fallback cases. Shell-wrapper missing-environment/executable behavior and later release/deployment concerns remain open.
 
 **Why it matters:** The most failure-prone boundaries—packaging, serial input, NMEA edge cases, privileges, timeouts, and installed entry points—can regress without detection.
 
-**Recommended change:** Complete the package rename and add coverage for:
+**Recommended change:** Completed in this stage for:
 
 - clean editable installation; wheel and source-distribution builds; wheel-only installation and import;
 - timeout before a valid fix; serial-port open/read failures; empty reads;
@@ -164,13 +164,13 @@ Expect no matches, then inspect wheel contents and installed entry-point metadat
 - partial status at the collection-window or overall-timeout boundary;
 - every CLI exit-code path and exact clock-setter call counts for normal, `--no-set`, and `--status` modes;
 - every recognized/unknown fix mode; naive datetime rejection; failed `date` fallback;
-- wrapper behavior when `.venv` or `gps-time-sync` is missing, plus option/override behavior once added.
+- Python application behavior listed above.
 
-Use captured, sanitized NMEA fixtures so realistic receiver streams can be replayed deterministically.
+Still add wrapper behavior when `.venv` or `gps-time-sync` is missing, plus option/override behavior once shell configurability is addressed. Captured, sanitized hardware NMEA fixtures remain a useful future complement to the deterministic in-test fixtures.
 
 **Files likely affected:** `tests/`, new sanitized fixture files, CI configuration, and later shell-test files.
 
-**How to verify the eventual fix:** Run the suite in a newly created environment, then install only the produced wheel in another environment and run import/module/CLI smoke tests. Ensure tests do not depend on physical GPS hardware, root, network access, or real sleeps.
+**How to verify the remaining work:** Retain the clean environment/artifact checks from P0 and the 67 deterministic tests from this stage; add the deferred shell/release checks without physical hardware, root, network access, or real sleeps.
 
 ## Documentation
 
@@ -253,9 +253,9 @@ Use captured, sanitized NMEA fixtures so realistic receiver streams can be repla
 ## Prioritized implementation plan
 
 1. **P0 — complete:** The Git-aware package rename, accepted GPLv3/Linux classifiers, clean editable installation, imports, tests, module/console entry points, wheel/sdist builds, and wheel-only installation were restored and validated.
-2. **P1:** Define and test status-collection completeness and timeout/warmup semantics.
-3. **P1:** Correct fix-mode output, choose a consistent serial-decoding policy, and narrowly harden `set_system_time()` fallback behavior.
-4. **P1:** Add realistic deterministic NMEA, serial-failure, timeout, CLI exit-code/call-count, and shell-wrapper tests.
+2. **P1 — complete for application behavior:** Status completeness/window and timeout/warmup semantics are defined and tested.
+3. **P1 — complete:** Fix-mode output, strict serial decoding, and narrow `set_system_time()` fallback behavior are corrected and tested.
+4. **P1 — partially complete:** Deterministic NMEA, serial-failure, timeout, and CLI exit-code/call-count tests are present; shell-wrapper tests remain deferred to the shell stage.
 5. **P2:** Rewrite and consolidate documentation around actual user workflows, device discovery, privilege boundaries, stable device paths, and time-service interaction.
 6. **P1/P2:** Make wrapper configuration external and design a reviewed systemd service/timer deployment path.
 7. **P2/P3:** Add focused CI, Ruff, ShellCheck, build/artifact smoke checks, and optionally static type checking.
@@ -270,7 +270,8 @@ Use captured, sanitized NMEA fixtures so realistic receiver streams can be repla
 - [x] `python -m build` produces both a wheel and source distribution; the disposable installation of `build` is recorded below.
 - [x] The generated wheel installs and imports in a second clean environment.
 - [x] Wheel/sdist contents contain the intended package and no misspelled package path.
-- [ ] Status collection, timeout, malformed input, serial failures, CLI paths, clock setting, and shell-wrapper failures are covered.
+- [x] Status collection, timeout, malformed input, serial failures, CLI paths, and clock setting are covered.
+- [ ] Shell-wrapper failures and future configurability are covered.
 - [ ] README instructions work from a clean clone and distinguish safe display modes from clock-setting mode.
 - [ ] CI checks supported Python versions, Ruff, ShellCheck, artifacts, and installed-package smoke tests.
 - [ ] Unattended deployment documents stable device naming, least privilege, logs, failure behavior, ordering, and competing time services.
@@ -348,4 +349,19 @@ The original audit established the P0 baseline above. The P0 repair was complete
 15. After updating this document, the artifacts were rebuilt with `rm -rf dist build && /tmp/gps-time-sync-audit-venv/bin/python -m build`; the final wheel was reinstalled with `--force-reinstall --no-deps` in the second environment, followed by the version import, module, console-help, `unzip -l`, and `tar -tzf` checks.
     - Result: both final artifacts rebuilt successfully; the final wheel reinstalled as version `0.1.0`; corrected import/module/console smoke checks succeeded; and both final archive listings contain only the corrected package path.
 
-The ordered remaining implementation sequence is: address collection/timeout/clock/decoding behavior and tests; then finish documentation, deployment, and CI work.
+### P1 behavioral-correctness validation log (2026-07-12)
+
+1. Initial `git status --short` confirmed the existing, uncommitted P0-stage changes. The literal `pytest` baseline command was unavailable in the shell (`pytest: command not found`), so the already-created disposable audit environment was used rather than the project `.venv`.
+2. `/tmp/gps-time-sync-audit-venv/bin/pytest`
+   - Baseline result: **14 passed in 0.04s** on Python 3.13.5.
+3. `/tmp/gps-time-sync-audit-venv/bin/pytest -q`
+   - First expanded result: **63 passed, 2 failed in 0.16s**. Both failures exposed an inconsistent synthetic fixture: GGA reported eight satellites while GSA listed six. The fixture was corrected to describe one consistent state.
+4. `/tmp/gps-time-sync-audit-venv/bin/pytest -q`
+   - Intermediate result after fixture correction: **65 passed in 0.15s**.
+5. Multipart GSV tracking was then tightened to require every numbered part for a talker, and supported clock-fallback errno coverage was expanded.
+6. `/tmp/gps-time-sync-audit-venv/bin/pytest -q`
+   - Pre-documentation result: **67 passed in 0.14s**.
+7. `source /tmp/gps-time-sync-audit-venv/bin/activate`, then `pytest`, `python -m gps_time_sync_vk172`, `gps-time-sync --help`, `git diff --check`, `git status --short`, `git diff --stat`, and `git diff --summary`.
+   - Final result: **67 passed in 0.10s**; module execution succeeded; CLI help displayed the new `--status-window` option and post-warmup timeout wording; `git diff --check` produced no output; and only this issue document, the application module, and its main test module are modified in this stage.
+
+The remaining implementation sequence is: shell-wrapper work and tests; then documentation, deployment, and CI/tooling work.
