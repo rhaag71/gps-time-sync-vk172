@@ -1,4 +1,4 @@
-# gps-time-syc-vk172
+# gps-time-sync-vk172
 
 This repository contains a Python 3 project managed via `pyproject.toml` and [Hatchling](https://hatch.pypa.io/latest/). It provides a utility that synchronizes the system clock using a GK172/G-Mouse VK172 USB GPS receiver.
 
@@ -34,7 +34,7 @@ pytest
 Use the bundled `gps-time-sync` CLI to read the current UTC time from the GK172 G-Mouse USB receiver and (optionally) apply it to the system clock.
 
 ```bash
-sudo gps-time-sync --port /dev/ttyUSB0
+sudo gps-time-sync --port /dev/ttyACM0
 ```
 
 Key flags:
@@ -62,16 +62,22 @@ Script defaults (edit `scripts/gps_sync.sh` to adjust):
 > **Tip:** Run the script as root (or grant the executable `CAP_SYS_TIME`) if you want the system clock updated automatically.
 When invoking manually with elevation, call it with an absolute path so `sudo` can find the virtualenv binary, e.g.
 
+Using my username `rob` as an example:
+
 ```bash
-sudo /home/rob/gps-time-syc-vk172/scripts/gps_sync.sh
+sudo /home/rob/gps-time-sync-vk172/scripts/gps_sync.sh
 ```
 
 ### Cron Example
+Using the above example, you can schedule the script to run every 15 minutes via cron. Edit root’s crontab with `sudo crontab -e` and add the following line:
 
+```
+*/15 * * * * /home/rob/gps-time-sync-vk172/scripts/gps_sync.sh >> /var/log/gps-sync.log 2>&1
+```
 Schedule the sync every 15 minutes by adding the following to root’s crontab:
 
 ```
-*/15 * * * * /home/rob/gps-time-syc-vk172/scripts/gps_sync.sh >> /var/log/gps-sync.log 2>&1
+*/15 * * * * /home/rob/gps-time-sync-vk172/scripts/gps_sync.sh >> /var/log/gps-sync.log 2>&1
 ```
 
 Make sure the script is executable (`chmod +x scripts/gps_sync.sh`) and that `/var/log/gps-sync.log` is writable by root. Adjust frequency, port, or timeout directly in the script as needed.

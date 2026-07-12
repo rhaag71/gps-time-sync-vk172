@@ -3,18 +3,18 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "gps-time-syc-vk172"
+name = "gps-time-sync-vk172"
 version = "0.1.0"
 description = "GPS time synchronization utilities for the VK172 USB receiver"
 authors = [{name = "Rob"}]
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = {text = "GNU General Public License v3 (GPLv3)"}
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "License :: OSI Approved :: MIT License",
-  "Operating System :: OS Independent",
+  "License :: GNU General Public License v3 (GPLv3)",
+  "Operating System :: Unix/Linux",
 ]
 dependencies = [
   "pyserial>=3.5",
@@ -26,11 +26,11 @@ test = [
 ]
 
 [project.scripts]
-gps-time-sync = "gps_time_syc_vk172.gps_time_sync:cli"
+gps-time-sync = "gps_time_sync_vk172.gps_time_sync:cli"
 
 [project.urls]
-Homepage = "https://example.com/gps-time-syc-vk172"
-Repository = "https://example.com/gps-time-syc-vk172.git"
+Homepage = "https://github.com/rhaag71/gps-time-sync-vk172"
+Repository = "https://github.com/rhaag71/gps-time-sync-vk172"
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -39,4 +39,4 @@ allow-direct-references = true
 exclude = ["tests"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/gps_time_syc_vk172"]
+packages = ["src/gps_time_sync_vk172"]
