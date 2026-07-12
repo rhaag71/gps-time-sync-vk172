@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 SCRIPT = Path(__file__).parents[1] / "scripts" / "gps_sync.sh"
 CONFIG_ENV = {
     "GPS_PORT",
@@ -15,11 +14,16 @@ CONFIG_ENV = {
     "GPS_STATUS_WINDOW",
 }
 DEFAULT_ARGS = [
-    "--port", "/dev/ttyACM0",
-    "--baudrate", "9600",
-    "--timeout", "60",
-    "--warmup", "2",
-    "--status-window", "2",
+    "--port",
+    "/dev/ttyACM0",
+    "--baudrate",
+    "9600",
+    "--timeout",
+    "60",
+    "--warmup",
+    "2",
+    "--status-window",
+    "2",
 ]
 
 
@@ -35,8 +39,8 @@ def make_fake_repo(tmp_path: Path, *, executable: bool = True) -> tuple[Path, Pa
         fake_cli.parent.mkdir(parents=True)
         fake_cli.write_text(
             "#!/usr/bin/env bash\n"
-            "printf '%s\\0' \"$@\" > \"$GPS_ARGS_FILE\"\n"
-            "exit \"${GPS_CHILD_EXIT:-0}\"\n"
+            'printf \'%s\\0\' "$@" > "$GPS_ARGS_FILE"\n'
+            'exit "${GPS_CHILD_EXIT:-0}"\n'
         )
         fake_cli.chmod(0o755)
     return script, args_file
@@ -70,7 +74,10 @@ def test_help_succeeds_without_virtual_environment(tmp_path):
     script, args_file = make_fake_repo(tmp_path, executable=False)
     result = run_script(script, args_file, "--help")
     assert result.returncode == 0
-    assert "command-line options > environment variables > built-in defaults" in result.stdout
+    assert (
+        "command-line options > environment variables > built-in defaults"
+        in result.stdout
+    )
     assert "GPS_STATUS_WINDOW" in result.stdout
 
 
@@ -96,8 +103,16 @@ def test_environment_overrides_defaults(tmp_path):
     )
     assert result.returncode == 0
     assert recorded_args(args_file) == [
-        "--port", "/dev/env-gps", "--baudrate", "4800", "--timeout", "10.5",
-        "--warmup", ".25", "--status-window", "3.0",
+        "--port",
+        "/dev/env-gps",
+        "--baudrate",
+        "4800",
+        "--timeout",
+        "10.5",
+        "--warmup",
+        ".25",
+        "--status-window",
+        "3.0",
     ]
 
 
@@ -106,11 +121,16 @@ def test_command_line_overrides_environment(tmp_path):
     result = run_script(
         script,
         args_file,
-        "--port", "/dev/cli-gps",
-        "--baudrate", "19200",
-        "--timeout", "20",
-        "--warmup", "1.5",
-        "--status-window", "4",
+        "--port",
+        "/dev/cli-gps",
+        "--baudrate",
+        "19200",
+        "--timeout",
+        "20",
+        "--warmup",
+        "1.5",
+        "--status-window",
+        "4",
         env={
             "GPS_PORT": "/dev/env-gps",
             "GPS_BAUDRATE": "4800",
@@ -121,8 +141,16 @@ def test_command_line_overrides_environment(tmp_path):
     )
     assert result.returncode == 0
     assert recorded_args(args_file) == [
-        "--port", "/dev/cli-gps", "--baudrate", "19200", "--timeout", "20",
-        "--warmup", "1.5", "--status-window", "4",
+        "--port",
+        "/dev/cli-gps",
+        "--baudrate",
+        "19200",
+        "--timeout",
+        "20",
+        "--warmup",
+        "1.5",
+        "--status-window",
+        "4",
     ]
 
 
@@ -210,9 +238,12 @@ def test_non_negative_number_boundaries_are_accepted(tmp_path, value):
     result = run_script(
         script,
         args_file,
-        "--timeout", value,
-        "--warmup", value,
-        "--status-window", value,
+        "--timeout",
+        value,
+        "--warmup",
+        value,
+        "--status-window",
+        value,
     )
     assert result.returncode == 0
     received = recorded_args(args_file)

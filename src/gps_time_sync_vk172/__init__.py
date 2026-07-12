@@ -1,6 +1,6 @@
 """GPS time synchronization utilities for the VK172 USB dongle."""
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("gps-time-sync-vk172")

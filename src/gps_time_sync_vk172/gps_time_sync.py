@@ -179,8 +179,7 @@ class GPSStatus:
         """Return True when both fix and satellite detail are available."""
         has_fix_information = self.fix_quality is not None or self.fix_mode is not None
         has_satellite_information = (
-            self.satellites_in_use is not None
-            or self.satellites_in_view is not None
+            self.satellites_in_use is not None or self.satellites_in_view is not None
         )
         return has_fix_information and has_satellite_information
 

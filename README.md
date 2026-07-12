@@ -282,21 +282,18 @@ The reader strictly decodes ASCII and validates checksums. A read containing non
 
 ## Development and testing
 
-Install the test extra, then run:
+Contributors should install the development extra and run the focused local checks:
 
 ```bash
+python -m pip install -e '.[dev]'
 pytest
+ruff check .
+ruff format --check .
 bash -n scripts/gps_sync.sh
-```
-
-Do not assume a global pytest installation; run these commands from the activated development environment. To build a wheel and source distribution, install the build frontend if it is not already present:
-
-```bash
-python -m pip install build
 python -m build
 ```
 
-The repository does not currently claim an automated CI workflow or configured ShellCheck integration. Historical implementation notes are in [Development Notes](docs/development-notes.md).
+Do not assume global development tools; run these commands from the activated environment. GitHub Actions checks Python 3.10–3.13, Ruff, Bash/ShellCheck, distribution contents, and wheel-only installation. See [Contributor Setup](docs/contributor-setup.md) for the complete local release-validation and installed-wheel smoke sequence. Historical implementation notes are in [Development Notes](docs/development-notes.md).
 
 ## License
 

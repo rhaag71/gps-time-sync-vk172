@@ -51,7 +51,9 @@ def install_serial(
     open_error: Exception | None = None,
     read_error: Exception | None = None,
 ):
-    encoded = iter(line if isinstance(line, bytes) else f"{line}\r\n".encode() for line in lines)
+    encoded = iter(
+        line if isinstance(line, bytes) else f"{line}\r\n".encode() for line in lines
+    )
     instances = []
 
     class FakeSerial:
@@ -189,8 +191,14 @@ def test_fix_mode_summary(fix_mode, expected):
 
 def test_gps_status_summary_contains_key_information():
     status = GPSStatus(
-        fix_status="A", fix_quality=1, fix_mode=3, satellites_in_use=10,
-        satellites_in_view=12, hdop=0.8, pdop=1.5, vdop=1.2,
+        fix_status="A",
+        fix_quality=1,
+        fix_mode=3,
+        satellites_in_use=10,
+        satellites_in_view=12,
+        hdop=0.8,
+        pdop=1.5,
+        vdop=1.2,
     )
     summary = status.summary_lines()
     assert "Fix status: Active" in summary[0]
@@ -247,7 +255,10 @@ def test_status_collection_does_not_treat_last_gsv_part_as_complete(monkeypatch)
     clock = FakeClock()
     install_serial(monkeypatch, [RMC, GGA, GSV_2], clock=clock, read_step=0.25)
     _, status = gps_time_sync.acquire_gps_time(
-        "/dev/ttyFAKE", timeout=5, warmup=0, require_detailed_status=True,
+        "/dev/ttyFAKE",
+        timeout=5,
+        warmup=0,
+        require_detailed_status=True,
         status_collection_window=0.75,
     )
     assert status.satellites_in_view == 8
@@ -258,7 +269,10 @@ def test_status_collection_returns_partial_gga_after_window(monkeypatch):
     clock = FakeClock()
     install_serial(monkeypatch, [RMC, GGA], clock=clock, read_step=0.25)
     _, status = gps_time_sync.acquire_gps_time(
-        "/dev/ttyFAKE", timeout=5, warmup=0, require_detailed_status=True,
+        "/dev/ttyFAKE",
+        timeout=5,
+        warmup=0,
+        require_detailed_status=True,
         status_collection_window=0.5,
     )
     assert status.fix_quality == 1
@@ -270,7 +284,10 @@ def test_overall_timeout_caps_status_window(monkeypatch):
     clock = FakeClock()
     install_serial(monkeypatch, [RMC, GGA], clock=clock, read_step=0.1)
     _, status = gps_time_sync.acquire_gps_time(
-        "/dev/ttyFAKE", timeout=0.3, warmup=0, require_detailed_status=True,
+        "/dev/ttyFAKE",
+        timeout=0.3,
+        warmup=0,
+        require_detailed_status=True,
         status_collection_window=5,
     )
     assert status.fix_quality == 1
@@ -346,7 +363,8 @@ def test_serial_open_failure_propagates(monkeypatch):
 def test_serial_read_failure_propagates(monkeypatch):
     clock = FakeClock()
     install_serial(
-        monkeypatch, clock=clock,
+        monkeypatch,
+        clock=clock,
         read_error=gps_time_sync.serial.SerialException("read"),
     )
     with pytest.raises(gps_time_sync.serial.SerialException, match="read"):
@@ -364,14 +382,19 @@ def test_empty_reads_continue_until_timeout(monkeypatch):
 def install_clock_error(monkeypatch, error):
     def fake_clock_settime(clock_id, timestamp):
         raise error
-    monkeypatch.setattr(gps_time_sync.time, "clock_settime", fake_clock_settime, raising=False)
+
+    monkeypatch.setattr(
+        gps_time_sync.time, "clock_settime", fake_clock_settime, raising=False
+    )
 
 
 def install_successful_date(monkeypatch):
     calls = []
+
     def fake_run(args, **kwargs):
         calls.append(args)
         return SimpleNamespace(returncode=0, stderr="", stdout="")
+
     monkeypatch.setattr(gps_time_sync.subprocess, "run", fake_run)
     return calls
 
@@ -379,8 +402,10 @@ def install_successful_date(monkeypatch):
 def test_set_system_time_uses_clock_settime(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        gps_time_sync.time, "clock_settime",
-        lambda clock_id, timestamp: calls.append((clock_id, timestamp)), raising=False,
+        gps_time_sync.time,
+        "clock_settime",
+        lambda clock_id, timestamp: calls.append((clock_id, timestamp)),
+        raising=False,
     )
     set_system_time(datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone.utc))
     assert calls[0][1] == pytest.approx(1704164645.0)
@@ -388,7 +413,9 @@ def test_set_system_time_uses_clock_settime(monkeypatch):
 
 def test_set_system_time_rejects_naive_datetime(monkeypatch):
     calls = []
-    monkeypatch.setattr(gps_time_sync.time, "clock_settime", lambda *args: calls.append(args))
+    monkeypatch.setattr(
+        gps_time_sync.time, "clock_settime", lambda *args: calls.append(args)
+    )
     with pytest.raises(ValueError, match="timezone-aware"):
         set_system_time(datetime(2024, 1, 2))
     assert calls == []
@@ -397,7 +424,8 @@ def test_set_system_time_rejects_naive_datetime(monkeypatch):
 def test_set_system_time_permission_failure_does_not_fallback(monkeypatch):
     install_clock_error(monkeypatch, PermissionError("denied"))
     monkeypatch.setattr(
-        gps_time_sync.subprocess, "run",
+        gps_time_sync.subprocess,
+        "run",
         lambda *args, **kwargs: pytest.fail("date fallback must not run"),
     )
     with pytest.raises(PermissionError, match="CAP_SYS_TIME"):
@@ -430,8 +458,11 @@ def test_set_system_time_unsupported_oserror_propagates(monkeypatch):
 def test_set_system_time_date_failure_has_diagnostic(monkeypatch):
     install_clock_error(monkeypatch, AttributeError("missing"))
     monkeypatch.setattr(
-        gps_time_sync.subprocess, "run",
-        lambda *args, **kwargs: SimpleNamespace(returncode=1, stderr="date denied", stdout=""),
+        gps_time_sync.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1, stderr="date denied", stdout=""
+        ),
     )
     with pytest.raises(RuntimeError, match="date denied"):
         set_system_time(datetime(2024, 1, 2, tzinfo=timezone.utc))
@@ -440,8 +471,11 @@ def test_set_system_time_date_failure_has_diagnostic(monkeypatch):
 def test_set_system_time_missing_date_command_has_diagnostic(monkeypatch):
     install_clock_error(monkeypatch, AttributeError("missing"))
     monkeypatch.setattr(
-        gps_time_sync.subprocess, "run",
-        lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError("date missing")),
+        gps_time_sync.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            FileNotFoundError("date missing")
+        ),
     )
     with pytest.raises(RuntimeError, match="date missing"):
         set_system_time(datetime(2024, 1, 2, tzinfo=timezone.utc))
@@ -450,7 +484,8 @@ def test_set_system_time_missing_date_command_has_diagnostic(monkeypatch):
 def fake_acquisition(monkeypatch):
     gps_dt = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
     monkeypatch.setattr(
-        gps_time_sync, "acquire_gps_time",
+        gps_time_sync,
+        "acquire_gps_time",
         lambda **kwargs: (gps_dt, GPSStatus(fix_status="A")),
     )
     return gps_dt
@@ -460,7 +495,8 @@ def fake_acquisition(monkeypatch):
 def test_cli_display_modes_never_set_clock(monkeypatch, flag):
     fake_acquisition(monkeypatch)
     monkeypatch.setattr(
-        gps_time_sync, "set_system_time",
+        gps_time_sync,
+        "set_system_time",
         lambda value: pytest.fail("clock setter must not be called"),
     )
     assert gps_time_sync.cli([flag, "--port", "/dev/ttyFAKE"]) == 0
@@ -488,12 +524,14 @@ def test_cli_error_exit_codes(monkeypatch, acquire_error, set_error, expected):
         fake_acquisition(monkeypatch)
     else:
         monkeypatch.setattr(
-            gps_time_sync, "acquire_gps_time",
+            gps_time_sync,
+            "acquire_gps_time",
             lambda **kwargs: (_ for _ in ()).throw(acquire_error),
         )
     if set_error is not None:
         monkeypatch.setattr(
-            gps_time_sync, "set_system_time",
+            gps_time_sync,
+            "set_system_time",
             lambda value: (_ for _ in ()).throw(set_error),
         )
     assert gps_time_sync.cli(["--port", "/dev/ttyFAKE"]) == expected

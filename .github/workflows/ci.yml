@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+      - name: Run tests
+        run: pytest
+      - name: Run Ruff lint
+        run: ruff check .
+      - name: Check Ruff formatting
+        run: ruff format --check .
+
+  shell:
+    name: Shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+      - name: Check Bash syntax
+        run: bash -n scripts/gps_sync.sh
+      - name: Run ShellCheck
+        run: shellcheck scripts/gps_sync.sh
+
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+      - name: Build wheel and source distribution
+        run: |
+          rm -rf dist build
+          python -m build
+      - name: Inspect package artifacts
+        run: |
+          wheel=(dist/*.whl)
+          sdist=(dist/*.tar.gz)
+          [[ ${#wheel[@]} -eq 1 && -f ${wheel[0]} ]]
+          [[ ${#sdist[@]} -eq 1 && -f ${sdist[0]} ]]
+          python -m zipfile -l "${wheel[0]}" | tee /tmp/wheel-contents.txt
+          tar -tf "${sdist[0]}" | tee /tmp/sdist-contents.txt
+          grep -q 'gps_time_sync_vk172/' /tmp/wheel-contents.txt
+          grep -q 'src/gps_time_sync_vk172/' /tmp/sdist-contents.txt
+          ! grep -Eq 'gps_time_syc_vk172|gps-time-syc-vk172' /tmp/wheel-contents.txt
+          ! grep -Eq 'gps_time_syc_vk172|gps-time-syc-vk172' /tmp/sdist-contents.txt
+          rm -rf /tmp/wheel-metadata
+          python -m zipfile -e "${wheel[0]}" /tmp/wheel-metadata
+          metadata=$(find /tmp/wheel-metadata -path '*/METADATA' -print -quit)
+          entry_points=$(find /tmp/wheel-metadata -path '*/entry_points.txt' -print -quit)
+          grep -Fx 'Name: gps-time-sync-vk172' "$metadata"
+          grep -Fx 'License: GNU General Public License v3 (GPLv3)' "$metadata"
+          grep -Fx 'Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)' "$metadata"
+          grep -Fx 'gps-time-sync = gps_time_sync_vk172.gps_time_sync:cli' "$entry_points"
+      - name: Upload distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  wheel-smoke:
+    name: Installed wheel smoke test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: distributions
+          path: dist
+      - name: Install wheel in a clean environment
+        run: |
+          python -m venv /tmp/gps-time-sync-wheel-smoke
+          /tmp/gps-time-sync-wheel-smoke/bin/python -m pip install --upgrade pip
+          /tmp/gps-time-sync-wheel-smoke/bin/python -m pip install dist/*.whl
+      - name: Smoke-test installed wheel
+        working-directory: /tmp
+        run: |
+          /tmp/gps-time-sync-wheel-smoke/bin/python -c 'import gps_time_sync_vk172; print(gps_time_sync_vk172.__version__)'
+          /tmp/gps-time-sync-wheel-smoke/bin/python -m gps_time_sync_vk172
+          /tmp/gps-time-sync-wheel-smoke/bin/gps-time-sync --help

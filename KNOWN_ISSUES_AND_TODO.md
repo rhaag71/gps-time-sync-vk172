@@ -14,7 +14,7 @@ The P0 package rename and packaging-metadata blockers are resolved in the curren
 
 The core implementation is substantial: it validates NMEA checksums, parses RMC/GGA/GSA/GSV messages, reports GPS status, avoids setting the clock in `--status` and `--no-set` modes, and has been used with VK172 hardware. The corrected `gps_time_sync_vk172` package now installs and builds cleanly, and the `gps-time-sync` entry point targets it. The canonical GPLv3 and Linux classifiers are accepted by current Hatchling.
 
-The packaging, application behavior, shell wrapper, and user-facing documentation have now been consolidated and validated. Remaining work centers on hardened unattended deployment and release tooling.
+The packaging, application behavior, shell wrapper, user-facing documentation, and focused release tooling have now been consolidated and validated locally. Remaining work centers on hardened unattended deployment and optional static typing; the new hosted CI workflow still needs its first run after being pushed.
 
 ## Confirmed strengths
 
@@ -226,17 +226,17 @@ Captured, sanitized hardware NMEA fixtures remain a useful future complement to 
 
 ## Development tooling and CI
 
-### P2 — no release-quality CI/tooling configuration is present (confirmed)
+### P2 — no release-quality CI/tooling configuration is present (resolved locally 2026-07-12)
 
-**Current behavior:** The tracked repository contains no GitHub Actions workflow, Ruff configuration, type-check configuration, ShellCheck workflow, or artifact-install smoke test. The `test` extra includes only pytest. `python -m build` is a requested release command but the `build` frontend is not declared in a development extra; in the disposable clean environment it failed with `No module named build`.
+**Current behavior:** `.github/workflows/ci.yml` configures a Python 3.10–3.13 test/Ruff matrix, a Bash/ShellCheck job, a distribution build/metadata inspection job, and a separate downloaded-wheel smoke job. `pyproject.toml` retains the small `test` extra and adds `dev` with pytest, build, and Ruff. Ruff targets Python 3.10 with an 88-character line length and focused import/correctness/style rules. ShellCheck remains a system tool and is installed only in CI.
 
 **Why it matters:** Supported Python versions, style, shell safety, buildability, wheel contents, and installed entry points are not continuously checked. Contributors cannot infer all release dependencies from project metadata.
 
-**Recommended change:** Add a focused GitHub Actions workflow that tests supported Python versions; uses Ruff for linting/formatting; optionally adds static type checking; runs ShellCheck; builds wheel and sdist; installs the generated wheel into a clean environment; and smoke-tests import, `python -m gps_time_sync_vk172`, and `gps-time-sync --help`. Declare `build` in a documented development/release extra or contributor requirements rather than silently installing unrelated tooling.
+**Recommended change:** Completed for CI configuration, Ruff, ShellCheck integration, artifact inspection, clean wheel installation, and declared development/release dependencies. Keep static typing optional. Confirm the hosted jobs on the first push or pull request.
 
-**Files likely affected:** `pyproject.toml`, future `.github/workflows/` files, and contributor documentation.
+**Files affected:** `pyproject.toml`, `.github/workflows/ci.yml`, `docs/contributor-setup.md`, `README.md`, and Ruff-formatted Python source/tests.
 
-**How to verify the eventual fix:** Run the documented local commands and require the CI matrix, lint/format, ShellCheck, build, artifact-install, and installed-command jobs to pass on a clean checkout.
+**How it was verified:** A disposable environment installed `.[dev]`; 102 tests and both Ruff checks passed; both distributions built and passed path/metadata/entry-point inspection; and the wheel installed and passed import/module/console smoke checks in a second clean environment. Local ShellCheck was unavailable. Workflow YAML and commands were manually reviewed, but hosted execution can only be confirmed after pushing.
 
 ### P3 — optional static typing and broader quality checks (optional)
 
@@ -258,7 +258,7 @@ Captured, sanitized hardware NMEA fixtures remain a useful future complement to 
 4. **P1 — complete for current scope:** Deterministic NMEA, serial-failure, timeout, CLI exit-code/call-count, and shell-wrapper tests are present.
 5. **P2 — complete:** User documentation is consolidated around actual workflows, device discovery, privilege boundaries, stable device paths, and time-service interaction.
 6. **P1/P2 — wrapper complete, deployment open:** Wrapper configuration is external; a reviewed systemd service/timer deployment path remains future work.
-7. **P2/P3:** Add focused CI, Ruff, ShellCheck, build/artifact smoke checks, and optionally static type checking.
+7. **P2 complete / P3 open:** Focused CI, Ruff, ShellCheck integration, build/artifact checks, and wheel smoke testing are configured; optional static typing remains open.
 
 ## Release-readiness checklist
 
@@ -273,7 +273,7 @@ Captured, sanitized hardware NMEA fixtures remain a useful future complement to 
 - [x] Status collection, timeout, malformed input, serial failures, CLI paths, and clock setting are covered.
 - [x] Shell-wrapper failures and external configurability are covered.
 - [x] README instructions distinguish safe display modes from clock-setting mode and use current commands/options.
-- [ ] CI checks supported Python versions, Ruff, ShellCheck, artifacts, and installed-package smoke tests.
+- [x] CI is configured to check Python 3.10–3.13, Ruff, ShellCheck, artifacts, and installed-package smoke tests; the first hosted run remains pending push.
 - [ ] Unattended deployment documents stable device naming, least privilege, logs, failure behavior, ordering, and competing time services.
 
 Suggested post-fix validation sequence:
@@ -395,4 +395,23 @@ The original audit established the P0 baseline above. The P0 repair was complete
 6. `git diff --check`
    - Result: exit code 0 with no output.
 
-The remaining implementation sequence is: systemd/deployment design and CI/tooling work, including GitHub Actions, Ruff, ShellCheck integration, and optional typing.
+### Release engineering and CI validation log (2026-07-12)
+
+1. Baseline inspection covered `README.md`, this issue record, `pyproject.toml`, `scripts/gps_sync.sh`, all Python source/tests, and contributor guidance. `pytest` reported **102 passed in 0.39s**; Ruff and ShellCheck were unavailable locally; build 1.5.1 was already present in the earlier disposable audit environment.
+2. Official GitHub action documentation was checked before selecting current majors: `actions/checkout@v6`, `actions/setup-python@v6`, `actions/upload-artifact@v7`, and `actions/download-artifact@v8`.
+3. A fresh `/tmp/gps-time-sync-dev-venv` was created and installed with `python -m pip install -e '.[dev]'` after upgrading pip.
+   - Result: the editable project, pytest 9.1.1, build 1.5.1, and Ruff 0.15.21 installed successfully. The existing `test` extra remains unchanged; the new `dev` extra declares pytest, build, and Ruff. ShellCheck is intentionally not a Python dependency.
+4. Initial `ruff check .` found four import-order findings; `ruff format --check .` identified three files needing formatting. `ruff check --fix .` fixed only those four imports, and `ruff format .` reformatted three files.
+5. `ruff check .`, `ruff format --check .`, and `pytest` after formatting.
+   - Result: Ruff reported `All checks passed!`, all six Python files were formatted, and **102 tests passed in 0.44s**.
+6. Full local release commands in the clean dev environment: `pytest`, `ruff check .`, `ruff format --check .`, `bash -n scripts/gps_sync.sh`, `rm -rf dist build`, and `python -m build`.
+   - Result: **102 passed in 0.40s**; Ruff lint passed; all six Python files passed the format check; Bash syntax passed; and Hatchling 1.31.0 built `gps_time_sync_vk172-0.1.0.tar.gz` plus `gps_time_sync_vk172-0.1.0-py3-none-any.whl`.
+7. `ls -l dist/`, `python -m zipfile -l dist/*.whl`, `tar -tf dist/*.tar.gz`, extracted wheel metadata checks, entry-point checks, and stale-package-path checks.
+   - Result: both artifacts exist; both contain only `gps_time_sync_vk172`; metadata reports distribution `gps-time-sync-vk172`, GPLv3 license/file/classifier, and the console entry point `gps-time-sync = gps_time_sync_vk172.gps_time_sync:cli`.
+8. A new `/tmp/gps-time-sync-wheel-check` environment upgraded pip and installed only `dist/*.whl` plus its runtime dependency. Smoke commands ran from `/tmp` rather than the checkout.
+   - Result: import printed version `0.1.0`; `python -m gps_time_sync_vk172` printed the package message; and `gps-time-sync --help` succeeded.
+9. Local ShellCheck result: unavailable (`command -v shellcheck` returned no path), so no system package was installed. The CI shell job installs the Ubuntu package and runs both `bash -n` and ShellCheck.
+10. Workflow configuration: push to `main`, pull requests targeting `main`, and manual dispatch; read-only contents permission; Python 3.10/3.11/3.12/3.13 matrix; separate shell, build, and downloaded-wheel smoke jobs; no secrets, publishing, releases, or write permissions.
+11. `ruff check .`, `ruff format --check .`, `bash -n scripts/gps_sync.sh`, and `git diff --check` passed after documentation updates. A local Ruby YAML parser was unavailable, so workflow indentation/actions/commands were reviewed manually; actual GitHub Actions execution remains pending push.
+
+The remaining implementation sequence is: systemd/least-privilege deployment design and optional static typing, followed later by normal changelog/version/tag/release work when a release is prepared.
