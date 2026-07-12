@@ -49,6 +49,14 @@ shellcheck scripts/gps_sync.sh
 
 ShellCheck is a system executable rather than a Python dependency. The wrapper help path does not require `.venv`, but its normal execution does.
 
+If `systemd-analyze` is available, validate unit syntax and relationships with:
+
+```bash
+systemd-analyze verify systemd/gps-time-sync.service systemd/gps-time-sync.timer
+```
+
+This static check does not require systemd to be PID 1, but referenced absolute paths or host unit availability can produce environment-specific diagnostics.
+
 ## Build distributions
 
 The build frontend is included in the `dev` extra. Create both distributions from a clean artifact directory and inspect their contents:

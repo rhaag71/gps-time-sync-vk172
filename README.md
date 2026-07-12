@@ -4,7 +4,7 @@
 
 ## Project status
 
-The utility is functional and has been tested with a VK172 USB GPS receiver. Packaging, core parsing and clock behavior, CLI paths, and the shell wrapper have automated tests. Guidance for polished unattended deployment is still being developed; review [Known Issues and Remaining Work](KNOWN_ISSUES_AND_TODO.md) before relying on the project in an important deployment.
+The utility is functional and has been tested with a VK172 USB GPS receiver. Packaging, core parsing and clock behavior, CLI paths, the shell wrapper, and deployment artifacts have automated tests. A reviewed systemd deployment path is available, while advanced site-specific privilege and time-service integration still require deliberate administration. Review [Known Issues and Remaining Work](KNOWN_ISSUES_AND_TODO.md) before relying on the project in an important deployment.
 
 ## Supported hardware and platform
 
@@ -204,15 +204,21 @@ Precedence is exactly:
 command-line options > environment variables > built-in defaults
 ```
 
+## Automation with systemd
+
+For unattended Linux deployment, the preferred path is the supplied root-run oneshot service and 15-minute timer. Install it from a controlled, system-owned location such as `/opt/gps-time-sync-vk172`, configure a stable `/dev/serial/by-id/...` device, and let output go to journald.
+
+See [systemd Deployment](docs/systemd-deployment.md) for installation, environment configuration, privilege boundaries, timer behavior, logs, failure handling, removal, and interaction with `systemd-timesyncd`, Chrony, or `ntpd`. The units do not disable competing time services automatically.
+
 ## Automation with cron
 
-Cron remains the current simple automation example. If clock setting is required, edit root's crontab with `sudo crontab -e`. Use an absolute repository path, a stable serial-device path, and explicit logging:
+Cron remains a simpler alternative. If clock setting is required, edit root's crontab with `sudo crontab -e`. Use an absolute repository path, a stable serial-device path, and explicit logging:
 
 ```cron
 */15 * * * * GPS_PORT=/dev/serial/by-id/usb-example /path/to/gps-time-sync-vk172/scripts/gps_sync.sh >> /var/log/gps-sync.log 2>&1
 ```
 
-Confirm that the checkout and virtual environment are managed appropriately and not casually mutable by unrelated users. A systemd service/timer is planned as the preferred future deployment approach but is not included yet; see [Known Issues and Remaining Work](KNOWN_ISSUES_AND_TODO.md).
+Confirm that the checkout and virtual environment are managed appropriately and not casually mutable by unrelated users. Do not enable both cron and the systemd timer for the same installation.
 
 Before automating clock changes, decide how this utility should interact with any existing network time service.
 
@@ -277,7 +283,7 @@ The reader strictly decodes ASCII and validates checksums. A read containing non
 - The project has been hardware-tested with a VK172 receiver; compatibility with other NMEA devices is not guaranteed.
 - The tool sets the system clock from a point-in-time GPS reading. It is not a continuous disciplining daemon.
 - `systemd-timesyncd`, Chrony, and NTP daemons can compete with manual GPS clock updates. Choose one authoritative policy deliberately.
-- Cron is documented as a simple current option. A hardened systemd service/timer design remains future work.
+- systemd is the preferred unattended path; cron remains a simpler alternative.
 - Unattended operation should use stable device naming, controlled installation ownership, least privilege, and monitored logs.
 
 ## Development and testing

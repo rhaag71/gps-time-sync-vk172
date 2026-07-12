@@ -1,0 +1,20 @@
+[Unit]
+Description=Synchronize the system clock from a VK172 GPS receiver
+Documentation=https://github.com/rhaag71/gps-time-sync-vk172/blob/main/docs/systemd-deployment.md
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/etc/default/gps-time-sync
+ExecStart=/opt/gps-time-sync-vk172/scripts/gps_sync.sh
+TimeoutStartSec=2min
+CapabilityBoundingSet=CAP_SYS_TIME
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+UMask=0077

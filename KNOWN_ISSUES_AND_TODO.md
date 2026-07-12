@@ -14,7 +14,7 @@ The P0 package rename and packaging-metadata blockers are resolved in the curren
 
 The core implementation is substantial: it validates NMEA checksums, parses RMC/GGA/GSA/GSV messages, reports GPS status, avoids setting the clock in `--status` and `--no-set` modes, and has been used with VK172 hardware. The corrected `gps_time_sync_vk172` package now installs and builds cleanly, and the `gps-time-sync` entry point targets it. The canonical GPLv3 and Linux classifiers are accepted by current Hatchling.
 
-The packaging, application behavior, shell wrapper, user-facing documentation, and focused release tooling have now been consolidated and validated locally. Remaining work centers on hardened unattended deployment and optional static typing; the new hosted CI workflow still needs its first run after being pushed.
+The packaging, application behavior, shell wrapper, user-facing documentation, focused release tooling, and default root-run systemd deployment path have now been consolidated and validated locally. Remaining work includes optional advanced non-root deployment and static typing; the hosted CI workflow still needs its first run after being pushed.
 
 ## Confirmed strengths
 
@@ -212,17 +212,29 @@ Captured, sanitized hardware NMEA fixtures remain a useful future complement to 
 
 **How it was verified:** Thirty-five pytest subprocess tests use a temporary fake repository and executable to cover defaults, precedence, by-id/spaced/metacharacter paths, flags, numeric boundaries, parse errors, missing `.venv`/executable exit codes, and child exit propagation. `bash -n` passes. ShellCheck was not installed and was not added during this stage.
 
-### P1 — unattended deployment guidance is not release-ready (confirmed documentation gap)
+### P1 — unattended deployment guidance is not release-ready (resolved for root-run systemd deployment 2026-07-12)
 
-**Current behavior:** The README now presents one generic root-cron example with a stable by-id path, explicit logging, managed-checkout caution, privilege boundaries, and network-time-service interaction. A reviewed systemd unit/timer, restart/failure policy, and service ordering are still not implemented.
+**Current behavior:** The repository now supplies a root-run `Type=oneshot` service, a monotonic timer, and an `/etc/default` environment example. The documented installation uses a controlled `/opt/gps-time-sync-vk172` checkout, stable by-id device naming, journald, bounded execution without restart loops, conservative hardening, explicit disable/removal steps, and deliberate coordination with other time services. Cron remains a simpler alternative.
 
 **Why it matters:** Broad root execution from a development tree and unstable device names increase operational and security risk; competing time services can immediately counteract GPS adjustments.
 
-**Recommended change:** Later provide a systemd service and timer as the preferred Linux deployment method, retaining cron as a simpler alternative. Cover a stable serial path, dedicated installation directory or managed virtual environment, avoiding root execution from a casually mutable checkout, careful use of `CAP_SYS_TIME` where appropriate instead of broad root, minimal serial permissions, logging, restart/failure policy, service ordering, and interaction with `systemd-timesyncd`, Chrony, or another NTP service. Do not create service files until that design is reviewed.
+**Recommended change:** Completed for the preferred root-run deployment. Preserve the controlled-installation, stable-device, journald, failure, ordering, and time-service guidance.
 
-**Files likely affected:** Future service/timer examples and deployment documentation.
+**Files affected:** `systemd/gps-time-sync.service`, `systemd/gps-time-sync.timer`, `systemd/gps-time-sync.env.example`, `docs/systemd-deployment.md`, `README.md`, contributor guidance, and deterministic deployment tests.
 
-**How to verify the eventual fix:** Test install/start/stop/restart, boot ordering, missing/disconnected GPS, permission boundaries, logs and failure status, timer execution, and coexistence or deliberate exclusion with the selected network time service.
+**How it was verified:** Static artifact tests, Ruff, Bash syntax, stale-path scans, and `systemd-analyze verify` passed locally. Actual timer firing, GPS access, journald output, clock changes, boot ordering, and coexistence with the host's selected time service require a real systemd host and receiver.
+
+### P3 — advanced non-root systemd privilege model (optional; unresolved)
+
+**Current behavior:** The supplied service runs as root with its capability bounding set limited to `CAP_SYS_TIME`. Documentation explains that non-root operation also needs explicit serial-device access and a site-reviewed capability model, but no generic non-root unit is shipped.
+
+**Why it matters:** A misleading non-root example could fail on device permissions or encourage assigning powerful capabilities to a shared Python interpreter.
+
+**Recommended change:** Only add a non-root unit after selecting a dedicated service identity, udev/group/ACL policy, executable installation model, and reviewed `CAP_SYS_TIME` mechanism appropriate to the target distribution.
+
+**Files likely affected:** A future alternative unit, udev/permissions guidance, and deployment tests.
+
+**How to verify the eventual fix:** Test on an actual systemd host that the selected user can open only the intended serial device, can set the clock through the reviewed capability path, cannot gain unrelated privileges, and fails clearly when either permission is absent.
 
 ## Development tooling and CI
 
@@ -257,7 +269,7 @@ Captured, sanitized hardware NMEA fixtures remain a useful future complement to 
 3. **P1 — complete:** Fix-mode output, strict serial decoding, and narrow `set_system_time()` fallback behavior are corrected and tested.
 4. **P1 — complete for current scope:** Deterministic NMEA, serial-failure, timeout, CLI exit-code/call-count, and shell-wrapper tests are present.
 5. **P2 — complete:** User documentation is consolidated around actual workflows, device discovery, privilege boundaries, stable device paths, and time-service interaction.
-6. **P1/P2 — wrapper complete, deployment open:** Wrapper configuration is external; a reviewed systemd service/timer deployment path remains future work.
+6. **P1/P2 complete / P3 optional:** Wrapper configuration and the default root-run systemd deployment path are complete; an advanced non-root model remains optional and open.
 7. **P2 complete / P3 open:** Focused CI, Ruff, ShellCheck integration, build/artifact checks, and wheel smoke testing are configured; optional static typing remains open.
 
 ## Release-readiness checklist
@@ -274,7 +286,8 @@ Captured, sanitized hardware NMEA fixtures remain a useful future complement to 
 - [x] Shell-wrapper failures and external configurability are covered.
 - [x] README instructions distinguish safe display modes from clock-setting mode and use current commands/options.
 - [x] CI is configured to check Python 3.10–3.13, Ruff, ShellCheck, artifacts, and installed-package smoke tests; the first hosted run remains pending push.
-- [ ] Unattended deployment documents stable device naming, least privilege, logs, failure behavior, ordering, and competing time services.
+- [x] Root-run unattended deployment documents stable device naming, bounded privilege, logs, failure behavior, ordering, and competing time services.
+- [ ] An optional advanced non-root systemd privilege/device-access model is implemented and hardware-validated.
 
 Suggested post-fix validation sequence:
 
@@ -414,4 +427,17 @@ The original audit established the P0 baseline above. The P0 repair was complete
 10. Workflow configuration: push to `main`, pull requests targeting `main`, and manual dispatch; read-only contents permission; Python 3.10/3.11/3.12/3.13 matrix; separate shell, build, and downloaded-wheel smoke jobs; no secrets, publishing, releases, or write permissions.
 11. `ruff check .`, `ruff format --check .`, `bash -n scripts/gps_sync.sh`, and `git diff --check` passed after documentation updates. A local Ruby YAML parser was unavailable, so workflow indentation/actions/commands were reviewed manually; actual GitHub Actions execution remains pending push.
 
-The remaining implementation sequence is: systemd/least-privilege deployment design and optional static typing, followed later by normal changelog/version/tag/release work when a release is prepared.
+### systemd deployment validation log (2026-07-12)
+
+1. Baseline inspection covered the README, this issue record, contributor guidance, project metadata, wrapper, and CI workflow. The wrapper help confirmed all five environment variables. `pytest` reported **102 passed in 0.38s**; Ruff lint/format and `bash -n` passed; `/usr/bin/systemd-analyze` was available.
+2. Added `systemd/gps-time-sync.service`, `systemd/gps-time-sync.timer`, `systemd/gps-time-sync.env.example`, `docs/systemd-deployment.md`, and `tests/test_systemd_deployment.py`; linked the deployment guide from the README and added the optional static verification command to contributor guidance.
+3. Privilege model: the default oneshot runs as root from the system-owned `/opt/gps-time-sync-vk172` path, limits its capability bounding set to `CAP_SYS_TIME`, prevents new privileges, and applies conservative hardening without hiding `/dev`. The environment file is optional at `/etc/default/gps-time-sync`. Advanced non-root operation remains intentionally site-specific and unresolved.
+4. Timer policy: `OnBootSec=2min`, `OnUnitActiveSec=15min`, and `AccuracySec=30s`. `Persistent=true` is intentionally omitted because this monotonic timer should establish a fresh cadence after boot rather than replay missed runs.
+5. `pytest -q tests/test_systemd_deployment.py`
+   - Result: **5 passed in 0.02s**. The tests check file presence, oneshot/environment/absolute wrapper configuration, timer target/cadence/install target, all wrapper environment variables, and absence of author paths, old names, exports, command substitution, and log redirection.
+6. `systemd-analyze verify systemd/gps-time-sync.service systemd/gps-time-sync.timer`
+   - Result: the sandbox returned exit code 1 before unit-specific verification because it could not enable socket credentials; its only output was `SO_PASSCRED failed: Operation not permitted`. No unit-file diagnostic was emitted, so a successful `systemd-analyze verify` still needs confirmation on an ordinary systemd-capable host.
+7. Final local commands before updating this record: `pytest`, `ruff check .`, `ruff format --check .`, `bash -n scripts/gps_sync.sh`, `git diff --check`, plus author-path and stale-name greps over `systemd`, `docs`, and `README.md`.
+   - Result: **107 passed in 0.38s**; Ruff reported `All checks passed!`; all seven Python files were formatted; Bash syntax and diff checks passed; both greps returned no matches.
+
+The remaining implementation sequence is: optional advanced non-root deployment and static typing, hosted CI confirmation after push, and normal changelog/version/tag/release work when a release is prepared.
